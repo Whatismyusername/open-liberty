@@ -410,7 +410,18 @@ public class LTPAKeyInfoManager {
     private byte[][] decryptKeys(@Sensitive byte[] keyPassword, @Sensitive String secretKeyStr, @Sensitive String privateKeyStr,
                                  @Sensitive String publicKeyStr, @Sensitive String mldsaPrivateKeyStr,
                                  @Sensitive String mldsaPublicKeyStr, boolean useAES) throws Exception {
+        long startDecryptKeys = System.currentTimeMillis();
+        // Key decrypting algorithm mirrors key encrypting algorithm used at write time
+        String keyEncAlgorithm = useAES ? "AES-CBC-256" : CryptoUtils.getCipher();
+        System.out.println("[LTPAKeyInfoManager] decryptKeys: start; keyEncAlgorithm=" + keyEncAlgorithm
+                + ", hasMldsaKeys=" + (mldsaPrivateKeyStr != null) + "; time=" + startDecryptKeys + " ms");
+
+        // KeyEncryptor construction (password-based key derivation via SHA-256)
+        long startEncryptor = System.currentTimeMillis();
         KeyEncryptor encryptor = new KeyEncryptor(keyPassword);
+        long encryptorMs = System.currentTimeMillis() - startEncryptor;
+        System.out.println("[LTPAKeyInfoManager] decryptKeys: KeyEncryptor construction (SHA-256 digest) took " + encryptorMs + " ms");
+
         byte[] secretKey, privateKey = null, publicKey = null;
         byte[] mldsaPrivateKey = null, mldsaPublicKey = null;
 
@@ -420,27 +431,45 @@ public class LTPAKeyInfoManager {
             String formattedMessage = Tr.formatMessage(tc, "LTPA_TOKEN_SERVICE_MISSING_KEY", LTPAKeyFileUtility.KEYIMPORT_SECRETKEY);
             throw new IllegalArgumentException(formattedMessage);
         }
+        long startSecretKey = System.currentTimeMillis();
         secretKey = useAES ? encryptor.decryptAES(Base64Coder.base64DecodeString(secretKeyStr))
                            : encryptor.decrypt(Base64Coder.base64DecodeString(secretKeyStr));
+        long secretKeyMs = System.currentTimeMillis() - startSecretKey;
+        System.out.println("[LTPAKeyInfoManager] decryptKeys: shared secret key (Base64 decode + decrypt, keyEncAlgorithm=" + keyEncAlgorithm + ") took " + secretKeyMs + " ms");
 
         // RSA keys — present in classical mode, absent in PQC mode.
         if (privateKeyStr != null && privateKeyStr.length() > 0) {
+            long startPrivateKey = System.currentTimeMillis();
             privateKey = useAES ? encryptor.decryptAES(Base64Coder.base64DecodeString(privateKeyStr))
                                 : encryptor.decrypt(Base64Coder.base64DecodeString(privateKeyStr));
+            long privateKeyMs = System.currentTimeMillis() - startPrivateKey;
+            System.out.println("[LTPAKeyInfoManager] decryptKeys: RSA private key (Base64 decode + decrypt, keyEncAlgorithm=" + keyEncAlgorithm + ") took " + privateKeyMs + " ms");
         }
         if (publicKeyStr != null && publicKeyStr.length() > 0) {
+            long startPublicKey = System.currentTimeMillis();
             publicKey = Base64Coder.base64DecodeString(publicKeyStr);
+            long publicKeyMs = System.currentTimeMillis() - startPublicKey;
+            System.out.println("[LTPAKeyInfoManager] decryptKeys: RSA public key (Base64 decode only) took " + publicKeyMs + " ms");
         }
 
         // ML-DSA keys — present in PQC mode, absent in classical mode.
         if (mldsaPrivateKeyStr != null && mldsaPrivateKeyStr.length() > 0) {
+            long startMLDSAPrivate = System.currentTimeMillis();
             mldsaPrivateKey = useAES ? encryptor.decryptAES(Base64Coder.base64DecodeString(mldsaPrivateKeyStr))
                                      : encryptor.decrypt(Base64Coder.base64DecodeString(mldsaPrivateKeyStr));
+            long mldsaPrivateMs = System.currentTimeMillis() - startMLDSAPrivate;
+            System.out.println("[LTPAKeyInfoManager] decryptKeys: ML-DSA private key (Base64 decode + decrypt, keyEncAlgorithm=" + keyEncAlgorithm + ") took " + mldsaPrivateMs + " ms");
         }
         if (mldsaPublicKeyStr != null && mldsaPublicKeyStr.length() > 0) {
+            long startMLDSAPublic = System.currentTimeMillis();
             mldsaPublicKey = Base64Coder.base64DecodeString(mldsaPublicKeyStr);
+            long mldsaPublicMs = System.currentTimeMillis() - startMLDSAPublic;
+            System.out.println("[LTPAKeyInfoManager] decryptKeys: ML-DSA public key (Base64 decode only) took " + mldsaPublicMs + " ms");
         }
 
+        long totalMs = System.currentTimeMillis() - startDecryptKeys;
+        System.out.println("[LTPAKeyInfoManager] decryptKeys: end; keyEncAlgorithm=" + keyEncAlgorithm
+                + ", encryptor=" + encryptorMs + " ms, total=" + totalMs + " ms");
         return new byte[][] { secretKey, privateKey, publicKey, mldsaPrivateKey, mldsaPublicKey };
     }
 

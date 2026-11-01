@@ -136,14 +136,18 @@ public class PQCSignatureHelper {
      * @throws InvalidKeyException if private key is invalid
      * @throws SignatureException if signing fails
      */
-    public static byte[] signMLDSA(byte[] data, PrivateKey privateKey, String provider) 
-            throws NoSuchAlgorithmException, NoSuchProviderException, 
+    public static byte[] signMLDSA(byte[] data, PrivateKey privateKey, String provider)
+            throws NoSuchAlgorithmException, NoSuchProviderException,
                    InvalidKeyException, SignatureException {
-        
+        long startSign = System.currentTimeMillis();
+        String mldsaVariant = (privateKey != null) ? privateKey.getAlgorithm() : "ML-DSA";
+        System.out.println("[PQCSignatureHelper] signMLDSA (" + mldsaVariant + "): start; dataLen=" + (data != null ? data.length : 0)
+                + ", provider=" + provider + "; time=" + startSign + " ms");
+
         if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
             Tr.entry(tc, "signMLDSA", "dataLength=" + (data != null ? data.length : 0), provider);
         }
-        
+
         // Validate inputs
         if (data == null || data.length == 0) {
             throw new IllegalArgumentException("Data to sign cannot be null or empty");
@@ -151,32 +155,39 @@ public class PQCSignatureHelper {
         if (privateKey == null) {
             throw new IllegalArgumentException("Private key cannot be null");
         }
-        
+
         try {
             // Get Signature instance for ML-DSA
+            long startCrypto = System.currentTimeMillis();
             Signature signature = (provider != null && !provider.isEmpty())
                 ? Signature.getInstance("ML-DSA", provider)
                 : Signature.getInstance("ML-DSA");  // Use default SUN provider
             // Initialize with private key
             signature.initSign(privateKey);
-            
+
             // Update with data to sign
             signature.update(data);
-            
+
             // Generate signature
             byte[] signatureBytes = signature.sign();
-            
+            long cryptoMs = System.currentTimeMillis() - startCrypto;
+
+            long totalMs = System.currentTimeMillis() - startSign;
+            System.out.println("[PQCSignatureHelper] signMLDSA (" + mldsaVariant + "): end;"
+                    + " signature=" + signatureBytes.length + " bytes"
+                    + ", crypto=" + cryptoMs + " ms, total=" + totalMs + " ms");
+
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "ML-DSA signature generated, length: " + signatureBytes.length);
             }
-            
+
             if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
                 Tr.exit(tc, "signMLDSA");
             }
-            
+
             return signatureBytes;
-            
-        } catch (NoSuchAlgorithmException | NoSuchProviderException | 
+
+        } catch (NoSuchAlgorithmException | NoSuchProviderException |
                  InvalidKeyException | SignatureException e) {
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "ML-DSA signing failed: " + e.getMessage());
@@ -204,12 +215,18 @@ public class PQCSignatureHelper {
                                       PublicKey publicKey, String provider)
             throws NoSuchAlgorithmException, NoSuchProviderException,
                    InvalidKeyException, SignatureException {
-        
+        long startVerify = System.currentTimeMillis();
+        String mldsaVariant = (publicKey != null) ? publicKey.getAlgorithm() : "ML-DSA";
+        System.out.println("[PQCSignatureHelper] verifyMLDSA (" + mldsaVariant + "): start;"
+                + " dataLen=" + (data != null ? data.length : 0)
+                + ", sigLen=" + (signatureBytes != null ? signatureBytes.length : 0)
+                + ", provider=" + provider + "; time=" + startVerify + " ms");
+
         if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
             Tr.entry(tc, "verifyMLDSA", "dataLength=" + (data != null ? data.length : 0),
                      "signatureLength=" + (signatureBytes != null ? signatureBytes.length : 0), provider);
         }
-        
+
         // Validate inputs
         if (data == null || data.length == 0) {
             throw new IllegalArgumentException("Data to verify cannot be null or empty");
@@ -222,11 +239,16 @@ public class PQCSignatureHelper {
         }
 
         // Cache lookup
+        long startCacheLookup = System.currentTimeMillis();
         byte[] keyEncoded = publicKey.getEncoded();
         MLDSAVerifyCachingKey ck = new MLDSAVerifyCachingKey(keyEncoded, data, signatureBytes);
         MLDSAVerifyCachingKey cached = mldsaVerifyKeysMap.get(ck);
+        long cacheLookupMs = System.currentTimeMillis() - startCacheLookup;
+        System.out.println("[PQCSignatureHelper] verifyMLDSA: cache lookup took " + cacheLookupMs + " ms");
+
         if (cached != null) {
             cached.successfulUses += 1;
+            System.out.println("[PQCSignatureHelper] verifyMLDSA: cache hit; total=" + (System.currentTimeMillis() - startVerify) + " ms");
             if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
                 Tr.exit(tc, "verifyMLDSA", "cache hit: " + cached.result);
             }
@@ -234,7 +256,9 @@ public class PQCSignatureHelper {
         }
 
         // Evict bottom 20% if at capacity
+        long evictionMs = 0;
         if (mldsaVerifyKeysMap.size() >= MAX_CACHE) {
+            long startEviction = System.currentTimeMillis();
             int mapSize = mldsaVerifyKeysMap.size();
             MLDSAVerifyCachingKey[] keys = mldsaVerifyKeysMap.keySet().toArray(new MLDSAVerifyCachingKey[mapSize]);
             Arrays.sort(keys, mldsaVerifyKeyComparator);
@@ -255,37 +279,47 @@ public class PQCSignatureHelper {
                     keys[keys.length - 1 - i - 4 * mapSize / 5].successfulUses--;
                 }
             }
+            evictionMs = System.currentTimeMillis() - startEviction;
+            System.out.println("[PQCSignatureHelper] verifyMLDSA: cache eviction took " + evictionMs + " ms");
         }
-        
+
         try {
             // Get Signature instance for ML-DSA
+            long startCrypto = System.currentTimeMillis();
             Signature signature = (provider != null && !provider.isEmpty())
                 ? Signature.getInstance("ML-DSA", provider)
                 : Signature.getInstance("ML-DSA");  // Use default SUN provider
             // Initialize with public key
             signature.initVerify(publicKey);
-            
+
             // Update with data
             signature.update(data);
-            
+
             // Verify signature
             boolean isValid = signature.verify(signatureBytes);
+            long cryptoMs = System.currentTimeMillis() - startCrypto;
+            System.out.println("[PQCSignatureHelper] verifyMLDSA: crypto (getInstance+initVerify+update+verify) took " + cryptoMs + " ms");
 
             // Store result in cache
             mldsaVerifyKeysMap.put(ck, ck);
             ck.result = isValid;
             ck.successfulUses = 0;
-            
+
+            long totalMs = System.currentTimeMillis() - startVerify;
+            System.out.println("[PQCSignatureHelper] verifyMLDSA (" + mldsaVariant + "): end;"
+                    + " valid=" + isValid + ", cacheLookup=" + cacheLookupMs + " ms, eviction=" + evictionMs
+                    + " ms, crypto=" + cryptoMs + " ms, total=" + totalMs + " ms");
+
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "ML-DSA signature verification result: " + isValid);
             }
-            
+
             if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
                 Tr.exit(tc, "verifyMLDSA", isValid);
             }
-            
+
             return isValid;
-            
+
         } catch (NoSuchAlgorithmException | NoSuchProviderException |
                  InvalidKeyException | SignatureException e) {
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
@@ -312,6 +346,9 @@ public class PQCSignatureHelper {
     public static byte[] signHybrid(byte[] data, Object rsaPrivateKey,
                                    PrivateKey mldsaPrivateKey, String provider)
             throws Exception {
+        long startHybridSign = System.currentTimeMillis();
+        System.out.println("[PQCSignatureHelper] signHybrid (RSA+" + "ML-DSA): start; dataLen=" + (data != null ? data.length : 0)
+                + ", provider=" + provider + "; time=" + startHybridSign + " ms");
 
         if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
             Tr.entry(tc, "signHybrid", "dataLength=" + (data != null ? data.length : 0), provider);
@@ -333,14 +370,20 @@ public class PQCSignatureHelper {
 
         try {
             // 1. Sign with RSA using existing Liberty LTPA code
+            long startRsa = System.currentTimeMillis();
             byte[] rsaSignature = signRSA(data, rsaPrivateKey);
+            long rsaMs = System.currentTimeMillis() - startRsa;
+            System.out.println("[PQCSignatureHelper] signHybrid: RSA sign took " + rsaMs + " ms; sigLen=" + rsaSignature.length + " bytes");
 
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "RSA signature generated, length: " + rsaSignature.length);
             }
 
             // 2. Sign with ML-DSA
+            long startMldsa = System.currentTimeMillis();
             byte[] mldsaSignature = signMLDSA(data, mldsaPrivateKey, provider);
+            long mldsaMs = System.currentTimeMillis() - startMldsa;
+            System.out.println("[PQCSignatureHelper] signHybrid: ML-DSA sign took " + mldsaMs + " ms; sigLen=" + mldsaSignature.length + " bytes");
 
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "ML-DSA signature generated, length: " + mldsaSignature.length);
@@ -348,6 +391,11 @@ public class PQCSignatureHelper {
 
             // 3. Combine both signatures: [4 bytes: RSA length][RSA sig][ML-DSA sig]
             byte[] hybridSignature = combineSignatures(rsaSignature, mldsaSignature);
+
+            long totalMs = System.currentTimeMillis() - startHybridSign;
+            System.out.println("[PQCSignatureHelper] signHybrid (RSA+ML-DSA): end;"
+                    + " hybridSigLen=" + hybridSignature.length + " bytes"
+                    + ", rsa=" + rsaMs + " ms, mldsa=" + mldsaMs + " ms, total=" + totalMs + " ms");
 
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "Hybrid signature created, total length: " + hybridSignature.length);
@@ -365,7 +413,7 @@ public class PQCSignatureHelper {
             }
             throw e;
         }
-    }   
+    }
  
     /**
      * Verify hybrid signature (both RSA and ML-DSA).
@@ -383,6 +431,11 @@ public class PQCSignatureHelper {
                                       Object rsaPublicKey, PublicKey mldsaPublicKey,
                                       String provider)
             throws Exception {
+        long startHybridVerify = System.currentTimeMillis();
+        System.out.println("[PQCSignatureHelper] verifyHybrid (RSA+ML-DSA): start;"
+                + " dataLen=" + (data != null ? data.length : 0)
+                + ", hybridSigLen=" + (hybridSignature != null ? hybridSignature.length : 0)
+                + ", provider=" + provider + "; time=" + startHybridVerify + " ms");
 
         if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
             Tr.entry(tc, "verifyHybrid", "dataLength=" + (data != null ? data.length : 0),
@@ -418,14 +471,20 @@ public class PQCSignatureHelper {
             }
 
             // 2. Verify RSA signature using existing Liberty code
+            long startRsa = System.currentTimeMillis();
             boolean rsaValid = verifyRSA(data, rsaSignature, rsaPublicKey);
+            long rsaMs = System.currentTimeMillis() - startRsa;
+            System.out.println("[PQCSignatureHelper] verifyHybrid: RSA verify took " + rsaMs + " ms; valid=" + rsaValid);
 
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "RSA signature verification: " + rsaValid);
             }
 
             // 3. Verify ML-DSA signature
+            long startMldsa = System.currentTimeMillis();
             boolean mldsaValid = verifyMLDSA(data, mldsaSignature, mldsaPublicKey, provider);
+            long mldsaMs = System.currentTimeMillis() - startMldsa;
+            System.out.println("[PQCSignatureHelper] verifyHybrid: ML-DSA verify took " + mldsaMs + " ms; valid=" + mldsaValid);
 
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "ML-DSA signature verification: " + mldsaValid);
@@ -433,6 +492,10 @@ public class PQCSignatureHelper {
 
             // 4. Both must be valid for hybrid verification to succeed
             boolean isValid = rsaValid && mldsaValid;
+
+            long totalMs = System.currentTimeMillis() - startHybridVerify;
+            System.out.println("[PQCSignatureHelper] verifyHybrid (RSA+ML-DSA): end;"
+                    + " valid=" + isValid + ", rsa=" + rsaMs + " ms, mldsa=" + mldsaMs + " ms, total=" + totalMs + " ms");
 
             if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
                 Tr.exit(tc, "verifyHybrid", isValid);

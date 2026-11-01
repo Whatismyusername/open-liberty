@@ -90,9 +90,11 @@ public class LTPAPQCSignature {
      * @throws NoSuchAlgorithmException if ML-DSA is not available
      * @throws InvalidKeySpecException if key generation fails
      */
-    public static KeyPair generateMLDSAKeyPair(MLDSAAlgorithmType algorithm) 
+    public static KeyPair generateMLDSAKeyPair(MLDSAAlgorithmType algorithm)
             throws NoSuchAlgorithmException, InvalidKeySpecException {
-        
+        long startGen = System.currentTimeMillis();
+        System.out.println("[LTPAPQCSignature] generateMLDSAKeyPair (" + algorithm.getAlgorithmName() + "): start; time=" + startGen + " ms");
+
         if (!ML_DSA_AVAILABLE) {
             throw new NoSuchAlgorithmException("ML-DSA not available (requires Java 26+)");
         }
@@ -100,7 +102,7 @@ public class LTPAPQCSignature {
         try {
             // Get ML-DSA key pair generator
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("ML-DSA");
-            
+
             // Create parameter spec using reflection
             Class<?> paramSpecClass = Class.forName("java.security.spec.MLDSAParameterSpec");
             Object paramSpec = null;
@@ -119,21 +121,27 @@ public class LTPAPQCSignature {
                 default:
                     throw new InvalidKeySpecException("Unknown ML-DSA algorithm: " + algorithm);
             }
-            
+
             // Initialize key generator with parameter spec
             keyGen.initialize((java.security.spec.AlgorithmParameterSpec) paramSpec);
-            
+
             // Generate key pair
             KeyPair keyPair = keyGen.generateKeyPair();
-            
+
+            long genMs = System.currentTimeMillis() - startGen;
+            System.out.println("[LTPAPQCSignature] generateMLDSAKeyPair (" + algorithm.getAlgorithmName() + "): end;"
+                    + " public=" + keyPair.getPublic().getEncoded().length + " bytes"
+                    + ", private=" + keyPair.getPrivate().getEncoded().length + " bytes"
+                    + ", took=" + genMs + " ms");
+
             if (tc.isDebugEnabled()) {
                 Tr.debug(tc, "Generated ML-DSA key pair: " + algorithm.getAlgorithmName() +
                         ", public=" + keyPair.getPublic().getEncoded().length + " bytes" +
                         ", private=" + keyPair.getPrivate().getEncoded().length + " bytes");
             }
-            
+
             return keyPair;
-            
+
         } catch (Exception e) {
             if (tc.isDebugEnabled()) {
                 Tr.debug(tc, "ML-DSA key generation failed", e);
@@ -152,11 +160,14 @@ public class LTPAPQCSignature {
      * @throws SignatureException if signing fails
      * @throws InvalidKeyException if key is invalid
      */
-    public static byte[] sign(@Sensitive byte[] data, 
+    public static byte[] sign(@Sensitive byte[] data,
                              @Sensitive PrivateKey privateKey,
-                             MLDSAAlgorithmType algorithm) 
+                             MLDSAAlgorithmType algorithm)
             throws SignatureException, InvalidKeyException {
-        
+        String algoName = (algorithm != null) ? algorithm.getAlgorithmName() : "ML-DSA";
+        long startSign = System.currentTimeMillis();
+        System.out.println("[LTPAPQCSignature] sign (" + algoName + "): start; dataLen=" + (data != null ? data.length : 0) + "; time=" + startSign + " ms");
+
         if (!ML_DSA_AVAILABLE) {
             throw new SignatureException("ML-DSA not available (requires Java 26+)");
         }
@@ -171,25 +182,32 @@ public class LTPAPQCSignature {
 
         try {
             // Create ML-DSA signature instance
+            long startCrypto = System.currentTimeMillis();
             Signature signature = Signature.getInstance("ML-DSA");
-            
+
             // Initialize for signing
             signature.initSign(privateKey);
-            
+
             // Update with data
             signature.update(data);
-            
+
             // Generate signature
             byte[] signatureBytes = signature.sign();
-            
+            long cryptoMs = System.currentTimeMillis() - startCrypto;
+
+            long totalMs = System.currentTimeMillis() - startSign;
+            System.out.println("[LTPAPQCSignature] sign (" + algoName + "): end;"
+                    + " data=" + data.length + " bytes, signature=" + signatureBytes.length + " bytes"
+                    + ", crypto=" + cryptoMs + " ms, total=" + totalMs + " ms");
+
             if (tc.isDebugEnabled()) {
-                Tr.debug(tc, "Generated ML-DSA signature: " + algorithm.getAlgorithmName() +
+                Tr.debug(tc, "Generated ML-DSA signature: " + algoName +
                         ", data=" + data.length + " bytes" +
                         ", signature=" + signatureBytes.length + " bytes");
             }
-            
+
             return signatureBytes;
-            
+
         } catch (NoSuchAlgorithmException e) {
             throw new SignatureException("ML-DSA algorithm not available", e);
         }
@@ -211,7 +229,13 @@ public class LTPAPQCSignature {
                                 PublicKey publicKey,
                                 MLDSAAlgorithmType algorithm)
             throws SignatureException, InvalidKeyException {
-        
+        String algoName = (algorithm != null) ? algorithm.getAlgorithmName() : "ML-DSA";
+        long startVerify = System.currentTimeMillis();
+        System.out.println("[LTPAPQCSignature] verify (" + algoName + "): start;"
+                + " dataLen=" + (data != null ? data.length : 0)
+                + ", sigLen=" + (signatureBytes != null ? signatureBytes.length : 0)
+                + "; time=" + startVerify + " ms");
+
         if (!ML_DSA_AVAILABLE) {
             throw new SignatureException("ML-DSA not available (requires Java 26+)");
         }
@@ -230,24 +254,29 @@ public class LTPAPQCSignature {
 
         try {
             // Create ML-DSA signature instance
+            long startCrypto = System.currentTimeMillis();
             Signature signature = Signature.getInstance("ML-DSA");
-            
+
             // Initialize for verification
             signature.initVerify(publicKey);
-            
+
             // Update with data
             signature.update(data);
-            
+
             // Verify signature
             boolean valid = signature.verify(signatureBytes);
-            
+            long cryptoMs = System.currentTimeMillis() - startCrypto;
+
+            long totalMs = System.currentTimeMillis() - startVerify;
+            System.out.println("[LTPAPQCSignature] verify (" + algoName + "): end;"
+                    + " valid=" + valid + ", crypto=" + cryptoMs + " ms, total=" + totalMs + " ms");
+
             if (tc.isDebugEnabled()) {
-                Tr.debug(tc, "Verified ML-DSA signature: " + algorithm.getAlgorithmName() +
-                        ", valid=" + valid);
+                Tr.debug(tc, "Verified ML-DSA signature: " + algoName + ", valid=" + valid);
             }
-            
+
             return valid;
-            
+
         } catch (NoSuchAlgorithmException e) {
             throw new SignatureException("ML-DSA algorithm not available", e);
         }
@@ -264,7 +293,10 @@ public class LTPAPQCSignature {
     public static PrivateKey reconstructPrivateKey(@Sensitive byte[] keyBytes,
                                                    MLDSAAlgorithmType algorithm)
             throws InvalidKeySpecException {
-        
+        String algoName = (algorithm != null) ? algorithm.getAlgorithmName() : "ML-DSA";
+        long startRecon = System.currentTimeMillis();
+        System.out.println("[LTPAPQCSignature] reconstructPrivateKey (" + algoName + "): start; keyLen=" + (keyBytes != null ? keyBytes.length : 0) + " bytes");
+
         if (!ML_DSA_AVAILABLE) {
             throw new InvalidKeySpecException("ML-DSA not available (requires Java 26+)");
         }
@@ -277,13 +309,16 @@ public class LTPAPQCSignature {
             KeyFactory keyFactory = KeyFactory.getInstance("ML-DSA");
             PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
             PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
-            
+
+            long reconMs = System.currentTimeMillis() - startRecon;
+            System.out.println("[LTPAPQCSignature] reconstructPrivateKey (" + algoName + "): end; took=" + reconMs + " ms");
+
             if (tc.isDebugEnabled()) {
-                Tr.debug(tc, "Reconstructed ML-DSA private key: " + algorithm.getAlgorithmName());
+                Tr.debug(tc, "Reconstructed ML-DSA private key: " + algoName);
             }
-            
+
             return privateKey;
-            
+
         } catch (NoSuchAlgorithmException e) {
             throw new InvalidKeySpecException("ML-DSA algorithm not available", e);
         }
@@ -300,7 +335,10 @@ public class LTPAPQCSignature {
     public static PublicKey reconstructPublicKey(byte[] keyBytes,
                                                 MLDSAAlgorithmType algorithm)
             throws InvalidKeySpecException {
-        
+        String algoName = (algorithm != null) ? algorithm.getAlgorithmName() : "ML-DSA";
+        long startRecon = System.currentTimeMillis();
+        System.out.println("[LTPAPQCSignature] reconstructPublicKey (" + algoName + "): start; keyLen=" + (keyBytes != null ? keyBytes.length : 0) + " bytes");
+
         if (!ML_DSA_AVAILABLE) {
             throw new InvalidKeySpecException("ML-DSA not available (requires Java 26+)");
         }
@@ -313,13 +351,16 @@ public class LTPAPQCSignature {
             KeyFactory keyFactory = KeyFactory.getInstance("ML-DSA");
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
             PublicKey publicKey = keyFactory.generatePublic(keySpec);
-            
+
+            long reconMs = System.currentTimeMillis() - startRecon;
+            System.out.println("[LTPAPQCSignature] reconstructPublicKey (" + algoName + "): end; took=" + reconMs + " ms");
+
             if (tc.isDebugEnabled()) {
-                Tr.debug(tc, "Reconstructed ML-DSA public key: " + algorithm.getAlgorithmName());
+                Tr.debug(tc, "Reconstructed ML-DSA public key: " + algoName);
             }
-            
+
             return publicKey;
-            
+
         } catch (NoSuchAlgorithmException e) {
             throw new InvalidKeySpecException("ML-DSA algorithm not available", e);
         }

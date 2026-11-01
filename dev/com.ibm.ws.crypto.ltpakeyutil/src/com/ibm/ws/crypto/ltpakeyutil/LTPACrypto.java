@@ -194,54 +194,65 @@ final class LTPACrypto {
      */
     @Trivial
     protected static final byte[] signISO9796(byte[][] key, byte[] data, int off, int len) throws Exception {
+        long startSign = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] signISO9796 (RSA/" + signatureAlgorithm + "): start; time=" + startSign + " ms");
+
+        // Cache lookup
+        long startCacheLookup = System.currentTimeMillis();
         CachingKey ck = new CachingKey(key, data, off, len);
         CachingKey result = cryptoKeysMap.get(ck);
+        long cacheLookupMs = System.currentTimeMillis() - startCacheLookup;
+        System.out.println("[LTPACrypto] signISO9796: cache lookup took " + cacheLookupMs + " ms");
 
         if (result != null) {
             result.successfulUses += 1;
             result.reused = true;
+            System.out.println("[LTPACrypto] signISO9796: cache hit; total=" + (System.currentTimeMillis() - startSign) + " ms");
             return result.result;
-        } else {
-            if (cryptoKeysMap.size() >= MAX_CACHE) {
-                try {
-                    int cryptoKeysMapSize = cryptoKeysMap.size();
-                    CachingKey[] keys = cryptoKeysMap.keySet().toArray(new CachingKey[cryptoKeysMapSize]);
-                    Arrays.sort(keys, cachingKeyComparator);
-                    if (cachingKeyComparator.compare(keys[0], keys[keys.length - 1]) < 0) {
-                        for (int i = 0; i < cryptoKeysMapSize / 5; i++) {
-                            cryptoKeysMap.remove(keys[i]);
-                            keys[i + 1 * cryptoKeysMapSize / 5].successfulUses--;
-                            keys[i + 2 * cryptoKeysMapSize / 5].successfulUses--;
-                            keys[i + 3 * cryptoKeysMapSize / 5].successfulUses--;
-                            keys[i + 4 * cryptoKeysMapSize / 5].successfulUses--;
-                        }
-                    } else { // TODO: consider removing bc this likely isn't used since we sort the keys above (except when all keys have the same num of uses)
-                        for (int i = 0; i < cryptoKeysMapSize / 5; i++) {
-                            cryptoKeysMap.remove(keys[keys.length - 1 - i]);
-                            keys[keys.length - 1 - i - 1 * cryptoKeysMapSize / 5].successfulUses--;
-                            keys[keys.length - 1 - i - 2 * cryptoKeysMapSize / 5].successfulUses--;
-                            keys[keys.length - 1 - i - 3 * cryptoKeysMapSize / 5].successfulUses--;
-                            keys[keys.length - 1 - i - 4 * cryptoKeysMapSize / 5].successfulUses--;
-                        }
-                    }
-                } catch (Exception e) {
-                    // do nothing. since this code is used for the command line
-                    // utility, no log is
-                    // taken.
-                }
-
-            }
         }
 
+        // Cache eviction (only when cache is full)
+        long evictionMs = 0;
+        if (cryptoKeysMap.size() >= MAX_CACHE) {
+            long startEviction = System.currentTimeMillis();
+            try {
+                int cryptoKeysMapSize = cryptoKeysMap.size();
+                CachingKey[] keys = cryptoKeysMap.keySet().toArray(new CachingKey[cryptoKeysMapSize]);
+                Arrays.sort(keys, cachingKeyComparator);
+                if (cachingKeyComparator.compare(keys[0], keys[keys.length - 1]) < 0) {
+                    for (int i = 0; i < cryptoKeysMapSize / 5; i++) {
+                        cryptoKeysMap.remove(keys[i]);
+                        keys[i + 1 * cryptoKeysMapSize / 5].successfulUses--;
+                        keys[i + 2 * cryptoKeysMapSize / 5].successfulUses--;
+                        keys[i + 3 * cryptoKeysMapSize / 5].successfulUses--;
+                        keys[i + 4 * cryptoKeysMapSize / 5].successfulUses--;
+                    }
+                } else { // TODO: consider removing bc this likely isn't used since we sort the keys above (except when all keys have the same num of uses)
+                    for (int i = 0; i < cryptoKeysMapSize / 5; i++) {
+                        cryptoKeysMap.remove(keys[keys.length - 1 - i]);
+                        keys[keys.length - 1 - i - 1 * cryptoKeysMapSize / 5].successfulUses--;
+                        keys[keys.length - 1 - i - 2 * cryptoKeysMapSize / 5].successfulUses--;
+                        keys[keys.length - 1 - i - 3 * cryptoKeysMapSize / 5].successfulUses--;
+                        keys[keys.length - 1 - i - 4 * cryptoKeysMapSize / 5].successfulUses--;
+                    }
+                }
+            } catch (Exception e) {
+                // do nothing. since this code is used for the command line
+                // utility, no log is taken.
+            }
+            evictionMs = System.currentTimeMillis() - startEviction;
+            System.out.println("[LTPACrypto] signISO9796: cache eviction took " + evictionMs + " ms");
+        }
+
+        // Crypto operation
+        long startCrypto = System.currentTimeMillis();
         /** Invoked by LTPADigSignature **/
         BigInteger n = new BigInteger(key[0]);
         BigInteger e = new BigInteger(key[2]);
         BigInteger p = new BigInteger(key[3]);
         BigInteger q = new BigInteger(key[4]);
         BigInteger d = e.modInverse((p.subtract(BigInteger.ONE)).multiply(q.subtract(BigInteger.ONE)));
-        KeyFactory kFact = null;
-
-        kFact = (provider == null) ? KeyFactory.getInstance(CryptoUtils.CRYPTO_ALGORITHM_RSA)
+        KeyFactory kFact = (provider == null) ? KeyFactory.getInstance(CryptoUtils.CRYPTO_ALGORITHM_RSA)
                 : KeyFactory.getInstance(CryptoUtils.CRYPTO_ALGORITHM_RSA, provider);
 
         BigInteger pep = new BigInteger(key[5]);
@@ -250,19 +261,21 @@ final class LTPACrypto {
         RSAPrivateCrtKeySpec privCrtKeySpec = new RSAPrivateCrtKeySpec(n, e, d, p, q, pep, peq, crtC);
         PrivateKey privKey = kFact.generatePrivate(privCrtKeySpec);
 
-        Signature rsaSig = null;
-
-        rsaSig = (provider == null) ? Signature.getInstance(signatureAlgorithm)
+        Signature rsaSig = (provider == null) ? Signature.getInstance(signatureAlgorithm)
                 : Signature.getInstance(signatureAlgorithm, provider);
 
         rsaSig.initSign(privKey);
         rsaSig.update(data, off, len);
         byte[] sig = rsaSig.sign();
+        long cryptoMs = System.currentTimeMillis() - startCrypto;
+        System.out.println("[LTPACrypto] signISO9796: crypto (KeyFactory+generatePrivate+" + signatureAlgorithm + "+sign) took " + cryptoMs + " ms");
 
         cryptoKeysMap.put(ck, ck);
         ck.result = sig;
         ck.successfulUses = 0;
 
+        long totalMs = System.currentTimeMillis() - startSign;
+        System.out.println("[LTPACrypto] signISO9796 (RSA/" + signatureAlgorithm + "): end; cacheLookup=" + cacheLookupMs + " ms, eviction=" + evictionMs + " ms, crypto=" + cryptoMs + " ms, total=" + totalMs + " ms");
         return sig;
     }
 
@@ -480,62 +493,76 @@ final class LTPACrypto {
     @Trivial
     protected static final boolean verifyISO9796(byte[][] key, byte[] data, int off, int len, byte[] sig, int sigOff,
             int sigLen) throws Exception {
+        long startVerify = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] verifyISO9796 (RSA/" + signatureAlgorithm + "): start; time=" + startVerify + " ms");
+
+        // Cache lookup
+        long startCacheLookup = System.currentTimeMillis();
         CachingVerifyKey ck = new CachingVerifyKey(key, data, off, len, sig, sigOff, sigLen);
         CachingVerifyKey result = verifyKeysMap.get(ck);
+        long cacheLookupMs = System.currentTimeMillis() - startCacheLookup;
+        System.out.println("[LTPACrypto] verifyISO9796: cache lookup took " + cacheLookupMs + " ms");
 
         if (result != null) {
             result.successfulUses += 1;
+            System.out.println("[LTPACrypto] verifyISO9796: cache hit; total=" + (System.currentTimeMillis() - startVerify) + " ms");
             return result.result;
-        } else {
-            if (verifyKeysMap.size() >= MAX_CACHE) {
-                int verifyKeysMapSize = verifyKeysMap.size();
-                CachingVerifyKey[] keys = verifyKeysMap.keySet().toArray(new CachingVerifyKey[verifyKeysMapSize]);
-                Arrays.sort(keys, cachingVerifyKeyComparator);
-                if (cachingVerifyKeyComparator.compare(keys[0], keys[keys.length - 1]) < 0) {
-                    for (int i = 0; i < verifyKeysMapSize / 5; i++) {
-                        verifyKeysMap.remove(keys[i]);
-                        keys[i + 1 * verifyKeysMapSize / 5].successfulUses--;
-                        keys[i + 2 * verifyKeysMapSize / 5].successfulUses--;
-                        keys[i + 3 * verifyKeysMapSize / 5].successfulUses--;
-                        keys[i + 4 * verifyKeysMapSize / 5].successfulUses--;
-                    }
-                } else { // TODO: consider removing bc this likely isn't used since we sort the keys above (except when all keys have the same num of uses)
-                    for (int i = 0; i < verifyKeysMapSize / 5; i++) {
-                        verifyKeysMap.remove(keys[keys.length - 1 - i]);
-                        keys[keys.length - 1 - i - 1 * verifyKeysMapSize / 5].successfulUses--;
-                        keys[keys.length - 1 - i - 2 * verifyKeysMapSize / 5].successfulUses--;
-                        keys[keys.length - 1 - i - 3 * verifyKeysMapSize / 5].successfulUses--;
-                        keys[keys.length - 1 - i - 4 * verifyKeysMapSize / 5].successfulUses--;
-                    }
-                }
-            }
         }
 
-        boolean verified = false;
+        // Cache eviction (only when cache is full)
+        long evictionMs = 0;
+        if (verifyKeysMap.size() >= MAX_CACHE) {
+            long startEviction = System.currentTimeMillis();
+            int verifyKeysMapSize = verifyKeysMap.size();
+            CachingVerifyKey[] keys = verifyKeysMap.keySet().toArray(new CachingVerifyKey[verifyKeysMapSize]);
+            Arrays.sort(keys, cachingVerifyKeyComparator);
+            if (cachingVerifyKeyComparator.compare(keys[0], keys[keys.length - 1]) < 0) {
+                for (int i = 0; i < verifyKeysMapSize / 5; i++) {
+                    verifyKeysMap.remove(keys[i]);
+                    keys[i + 1 * verifyKeysMapSize / 5].successfulUses--;
+                    keys[i + 2 * verifyKeysMapSize / 5].successfulUses--;
+                    keys[i + 3 * verifyKeysMapSize / 5].successfulUses--;
+                    keys[i + 4 * verifyKeysMapSize / 5].successfulUses--;
+                }
+            } else { // TODO: consider removing bc this likely isn't used since we sort the keys above (except when all keys have the same num of uses)
+                for (int i = 0; i < verifyKeysMapSize / 5; i++) {
+                    verifyKeysMap.remove(keys[keys.length - 1 - i]);
+                    keys[keys.length - 1 - i - 1 * verifyKeysMapSize / 5].successfulUses--;
+                    keys[keys.length - 1 - i - 2 * verifyKeysMapSize / 5].successfulUses--;
+                    keys[keys.length - 1 - i - 3 * verifyKeysMapSize / 5].successfulUses--;
+                    keys[keys.length - 1 - i - 4 * verifyKeysMapSize / 5].successfulUses--;
+                }
+            }
+            evictionMs = System.currentTimeMillis() - startEviction;
+            System.out.println("[LTPACrypto] verifyISO9796: cache eviction took " + evictionMs + " ms");
+        }
 
+        // Crypto operation
+        long startCrypto = System.currentTimeMillis();
         BigInteger n = new BigInteger(key[0]);
         BigInteger e = new BigInteger(key[1]);
 
-        KeyFactory kFact = null;
-        Signature rsaSig = null;
-
-        kFact = (provider == null) ? KeyFactory.getInstance(CryptoUtils.CRYPTO_ALGORITHM_RSA)
+        KeyFactory kFact = (provider == null) ? KeyFactory.getInstance(CryptoUtils.CRYPTO_ALGORITHM_RSA)
                 : KeyFactory.getInstance(CryptoUtils.CRYPTO_ALGORITHM_RSA, provider);
 
         RSAPublicKeySpec pubKeySpec = new RSAPublicKeySpec(n, e);
         PublicKey pubKey = kFact.generatePublic(pubKeySpec);
 
-        rsaSig = (provider == null) ? Signature.getInstance(signatureAlgorithm)
+        Signature rsaSig = (provider == null) ? Signature.getInstance(signatureAlgorithm)
                 : Signature.getInstance(signatureAlgorithm, provider);
 
         rsaSig.initVerify(pubKey);
         rsaSig.update(data, off, len);
-        verified = rsaSig.verify(sig);
+        boolean verified = rsaSig.verify(sig, sigOff, sigLen);
+        long cryptoMs = System.currentTimeMillis() - startCrypto;
+        System.out.println("[LTPACrypto] verifyISO9796: crypto (KeyFactory+generatePublic+" + signatureAlgorithm + "+verify) took " + cryptoMs + " ms");
 
         verifyKeysMap.put(ck, ck);
         ck.result = verified;
         ck.successfulUses = 0;
 
+        long totalMs = System.currentTimeMillis() - startVerify;
+        System.out.println("[LTPACrypto] verifyISO9796 (RSA/" + signatureAlgorithm + "): end; cacheLookup=" + cacheLookupMs + " ms, eviction=" + evictionMs + " ms, crypto=" + cryptoMs + " ms, total=" + totalMs + " ms");
         return verified;
     }
 
@@ -668,6 +695,7 @@ final class LTPACrypto {
         return encrypt(data, key, cipher, 0);
     }
 
+
     /**
      * Encrypt the data with an explicit AES key length.
      * <p>
@@ -683,9 +711,14 @@ final class LTPACrypto {
      */
     @Trivial
     protected static final byte[] encrypt(byte[] data, byte[] key, String cipher, int keyLengthBytes) throws Exception {
+        long startEncrypt = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] encrypt (" + cipher + ", keyLen=" + (keyLengthBytes > 0 ? keyLengthBytes * 8 : (fipsEnabled ? 256 : "default")) + "-bit): start; dataLen=" + data.length);
         SecretKey sKey = constructSecretKey(key, cipher, keyLengthBytes);
         Cipher ci = createCipher(Cipher.ENCRYPT_MODE, key, cipher, sKey);
-        return ci.doFinal(data);
+        byte[] result = ci.doFinal(data);
+        long encryptMs = System.currentTimeMillis() - startEncrypt;
+        System.out.println("[LTPACrypto] encrypt (" + cipher + "): end; plaintext=" + data.length + " bytes, ciphertext=" + result.length + " bytes, took=" + encryptMs + " ms");
+        return result;
     }
 
     /**
@@ -700,6 +733,7 @@ final class LTPACrypto {
     protected static final byte[] decrypt(byte[] msg, byte[] key, String cipher) throws Exception {
         return decrypt(msg, key, cipher, 0);
     }
+
 
     /**
      * Decrypt the specified msg with an explicit AES key length.
@@ -716,9 +750,14 @@ final class LTPACrypto {
      */
     @Trivial
     protected static final byte[] decrypt(byte[] msg, byte[] key, String cipher, int keyLengthBytes) throws Exception {
+        long startDecrypt = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] decrypt (" + cipher + ", keyLen=" + (keyLengthBytes > 0 ? keyLengthBytes * 8 : (fipsEnabled ? 256 : "default")) + "-bit): start; ciphertextLen=" + msg.length);
         SecretKey sKey = constructSecretKey(key, cipher, keyLengthBytes);
         Cipher ci = createCipher(Cipher.DECRYPT_MODE, key, cipher, sKey);
-        return ci.doFinal(msg);
+        byte[] result = ci.doFinal(msg);
+        long decryptMs = System.currentTimeMillis() - startDecrypt;
+        System.out.println("[LTPACrypto] decrypt (" + cipher + "): end; ciphertext=" + msg.length + " bytes, plaintext=" + result.length + " bytes, took=" + decryptMs + " ms");
+        return result;
     }
 
     /**
@@ -735,6 +774,9 @@ final class LTPACrypto {
      */
     @Trivial
     protected static final byte[] encryptGCM(byte[] data, byte[] key) throws Exception {
+        long startEncryptGCM = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] encryptGCM (AES-256-GCM): start; dataLen=" + data.length);
+
         // Generate random 12-byte IV for GCM
         SecureRandom random = new SecureRandom();
         byte[] iv = new byte[12];
@@ -744,6 +786,9 @@ final class LTPACrypto {
         byte[] result = new byte[12 + ciphertext.length];
         System.arraycopy(iv, 0, result, 0, 12);
         System.arraycopy(ciphertext, 0, result, 12, ciphertext.length);
+
+        long encryptGCMMs = System.currentTimeMillis() - startEncryptGCM;
+        System.out.println("[LTPACrypto] encryptGCM (AES-256-GCM): end; plaintext=" + data.length + " bytes, ciphertext+IV=" + result.length + " bytes, took=" + encryptGCMMs + " ms");
         return result;
     }
 
@@ -759,17 +804,24 @@ final class LTPACrypto {
      * @throws Exception if encryption fails
      */
     protected static final byte[] encryptGCM(byte[] data, byte[] key, byte[] iv) throws Exception {
+        long startEncryptGCMIV = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] encryptGCM (AES-256-GCM, caller-supplied IV): start; dataLen=" + data.length);
+
         int keyLength = CryptoUtils.AES_256_KEY_LENGTH_BYTES;
         SecretKeySpec keySpec = new SecretKeySpec(key, 0, keyLength, CryptoUtils.ENCRYPT_ALGORITHM_AES);
-        
+
         // Initialize cipher with GCM mode
-        Cipher cipher = (provider == null) 
+        Cipher cipher = (provider == null)
             ? Cipher.getInstance("AES/GCM/NoPadding")
             : Cipher.getInstance("AES/GCM/NoPadding", provider);
-        
+
         GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv); // 128-bit auth tag
         cipher.init(Cipher.ENCRYPT_MODE, keySpec, gcmSpec);
-        return cipher.doFinal(data);
+        byte[] result = cipher.doFinal(data);
+
+        long encryptGCMIVMs = System.currentTimeMillis() - startEncryptGCMIV;
+        System.out.println("[LTPACrypto] encryptGCM (AES-256-GCM, caller-supplied IV): end; plaintext=" + data.length + " bytes, ciphertext+tag=" + result.length + " bytes, took=" + encryptGCMIVMs + " ms");
+        return result;
     }
 
     /**
@@ -784,14 +836,21 @@ final class LTPACrypto {
      */
     @Trivial
     protected static final byte[] decryptGCM(byte[] encryptedData, byte[] key) throws Exception {
+        long startDecryptGCM = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] decryptGCM (AES-256-GCM): start; encryptedLen=" + encryptedData.length);
+
         // Extract IV (first 12 bytes)
         byte[] iv = new byte[12];
         System.arraycopy(encryptedData, 0, iv, 0, 12);
-        
+
         // Extract ciphertext + auth tag (remaining bytes)
         byte[] ciphertext = new byte[encryptedData.length - 12];
         System.arraycopy(encryptedData, 12, ciphertext, 0, ciphertext.length);
-        return decryptGCM(ciphertext, key, iv);
+        byte[] result = decryptGCM(ciphertext, key, iv);
+
+        long decryptGCMMs = System.currentTimeMillis() - startDecryptGCM;
+        System.out.println("[LTPACrypto] decryptGCM (AES-256-GCM): end; ciphertext+IV=" + encryptedData.length + " bytes, plaintext=" + result.length + " bytes, took=" + decryptGCMMs + " ms");
+        return result;
     }
 
     /**
@@ -806,6 +865,9 @@ final class LTPACrypto {
      */
     @Trivial
     protected static final byte[] decryptGCM(byte[] ciphertext, byte[] key, byte[] iv) throws Exception {
+        long startDecryptGCMIV = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] decryptGCM (AES-256-GCM, caller-supplied IV): start; ciphertextLen=" + ciphertext.length);
+
         int keyLength = CryptoUtils.AES_256_KEY_LENGTH_BYTES;
         SecretKeySpec keySpec = new SecretKeySpec(key, 0, keyLength, CryptoUtils.ENCRYPT_ALGORITHM_AES);
 
@@ -813,12 +875,16 @@ final class LTPACrypto {
         Cipher cipher = (provider == null)
             ? Cipher.getInstance("AES/GCM/NoPadding")
             : Cipher.getInstance("AES/GCM/NoPadding", provider);
-        
+
         GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv); // 128-bit auth tag
         cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec);
-        
+
         // Decrypt and verify authentication tag
-        return cipher.doFinal(ciphertext);
+        byte[] result = cipher.doFinal(ciphertext);
+
+        long decryptGCMIVMs = System.currentTimeMillis() - startDecryptGCMIV;
+        System.out.println("[LTPACrypto] decryptGCM (AES-256-GCM, caller-supplied IV): end; ciphertext+tag=" + ciphertext.length + " bytes, plaintext=" + result.length + " bytes, took=" + decryptGCMIVMs + " ms");
+        return result;
     }
 
     /*
@@ -867,6 +933,8 @@ final class LTPACrypto {
 
     @Trivial
     static final byte[][] rsaKey(int len, boolean crt, boolean f4) {
+        long startRsaKey = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] rsaKey (RSA-" + (len * 8) + "): start key pair generation");
         byte[][] key = new byte[crt ? 8 : 3][];
         KeyPair pair = null;
         KeyPairGenerator keyGen = null;
@@ -968,6 +1036,8 @@ final class LTPACrypto {
             }
         }
 
+        long rsaKeyMs = System.currentTimeMillis() - startRsaKey;
+        System.out.println("[LTPACrypto] rsaKey (RSA-" + (len * 8) + "): end; key pair generation took " + rsaKeyMs + " ms");
         return key;
     }
 }

@@ -208,6 +208,10 @@ public class LTPAToken2 implements Token, Serializable {
      * @throws Exception
      */
     private final void encrypt() throws Exception {
+        long startEncrypt = System.currentTimeMillis();
+        System.out.println("[LTPAToken2] encrypt: start; cipher=" + resolvedCipher
+                + ", keyLen=" + resolvedKeyLength + "; time=" + startEncrypt + " ms");
+
         String signStr = Base64Coder.toString(Base64Coder.base64Encode(signature));
         String ud = userData.toString();
 
@@ -228,6 +232,7 @@ public class LTPAToken2 implements Token, Serializable {
             Tr.event(this, tc, "resolvedCipher=" + resolvedCipher + " resolvedKeyLength=" + resolvedKeyLength);
         }
 
+        long startCipher = System.currentTimeMillis();
         byte[] ciphertext;
         try {
             if (CryptoUtils.AES_GCM_CIPHER.equals(resolvedCipher)) {
@@ -242,8 +247,12 @@ public class LTPAToken2 implements Token, Serializable {
             }
             throw e;
         }
+        long cipherMs = System.currentTimeMillis() - startCipher;
+        System.out.println("[LTPAToken2] encrypt: cipher (" + resolvedCipher + ", keyLen=" + resolvedKeyLength + ") took " + cipherMs + " ms"
+                + "; plaintext=" + toBeEnc.length + " bytes, ciphertext=" + ciphertext.length + " bytes");
 
-        // Add token header
+        // Write token header
+        long startHeader = System.currentTimeMillis();
         byte sigAlgByte = LTPATokenHeader.encodeSigAlg(signingMode, classicalSigAlg);
         byte encAlgByte = LTPATokenHeader.encodeEncAlg(resolvedCipher, resolvedKeyLength);
         encryptedBytes = new byte[LTPATokenHeader.HEADER_SIZE + ciphertext.length];
@@ -252,6 +261,15 @@ public class LTPAToken2 implements Token, Serializable {
         encryptedBytes[5] = sigAlgByte;
         encryptedBytes[6] = encAlgByte;
         System.arraycopy(ciphertext, 0, encryptedBytes, LTPATokenHeader.HEADER_SIZE, ciphertext.length);
+        long headerMs = System.currentTimeMillis() - startHeader;
+        System.out.println("[LTPAToken2] encrypt: header written;"
+                + " magic=LTPA, version=0x01"
+                + ", sigAlgByte=0x" + Integer.toHexString(sigAlgByte & 0xFF) + " (" + signingMode + "/" + classicalSigAlg + ")"
+                + ", encAlgByte=0x" + Integer.toHexString(encAlgByte & 0xFF) + " (" + resolvedCipher + ", keyLen=" + resolvedKeyLength + ")"
+                + ", headerSize=" + LTPATokenHeader.HEADER_SIZE + " bytes, took=" + headerMs + " ms");
+
+        long totalMs = System.currentTimeMillis() - startEncrypt;
+        System.out.println("[LTPAToken2] encrypt: end; tokenSize=" + encryptedBytes.length + " bytes, total=" + totalMs + " ms");
 
         if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
             Tr.event(this, tc, "Encrypted bytes are: " + (encryptedBytes == null ? "" : Base64Coder.toString(Base64Coder.base64Encode(encryptedBytes))));
@@ -265,7 +283,9 @@ public class LTPAToken2 implements Token, Serializable {
      *                               byte is not recognised.
      */
     private void extractTokenHeader() throws InvalidTokenException {
+        long startHeader = System.currentTimeMillis();
         if (!LTPATokenHeader.hasMagic(encryptedBytes)) {
+            System.out.println("[LTPAToken2] extractTokenHeader: no magic prefix found — legacy token (no header)");
             return;
         }
         byte versionByte = encryptedBytes[4];
@@ -276,6 +296,12 @@ public class LTPAToken2 implements Token, Serializable {
         sigAlgForVerify = LTPATokenHeader.decodeSigAlg(encryptedBytes[5]);
         headerCipher = LTPATokenHeader.decodeCipher(encryptedBytes[6]);
         headerKeyLen = LTPATokenHeader.decodeKeyLength(encryptedBytes[6]);
+        long headerMs = System.currentTimeMillis() - startHeader;
+        System.out.println("[LTPAToken2] extractTokenHeader: header parsed;"
+                + " version=0x" + Integer.toHexString(versionByte & 0xFF)
+                + ", sigAlgByte=0x" + Integer.toHexString(encryptedBytes[5] & 0xFF) + " -> sigAlgForVerify=" + sigAlgForVerify
+                + ", encAlgByte=0x" + Integer.toHexString(encryptedBytes[6] & 0xFF) + " -> cipher=" + headerCipher + ", keyLen=" + headerKeyLen
+                + ", took=" + headerMs + " ms");
     }
 
     /**
@@ -285,6 +311,10 @@ public class LTPAToken2 implements Token, Serializable {
      */
     @FFDCIgnore({ BadPaddingException.class, Exception.class })
     private final void decrypt() throws InvalidTokenException {
+        long startDecrypt = System.currentTimeMillis();
+        System.out.println("[LTPAToken2] decrypt: start; headerCipher=" + headerCipher
+                + ", headerKeyLen=" + headerKeyLen + "; time=" + startDecrypt + " ms");
+
         byte[] tokenData;
         try {
             if (headerCipher != null) {
@@ -294,11 +324,15 @@ public class LTPAToken2 implements Token, Serializable {
                     Tr.debug(this, tc, "decrypt: headered token cipher=" + headerCipher + " keyLen=" + headerKeyLen);
                 }
 
+                long startCipher = System.currentTimeMillis();
                 if (CryptoUtils.AES_GCM_CIPHER.equals(headerCipher)) {
                     tokenData = LTPAKeyUtil.decryptGCM(ciphertext, sharedKey);
                 } else {
                     tokenData = LTPAKeyUtil.decrypt(ciphertext, sharedKey, headerCipher, headerKeyLen);
                 }
+                long cipherMs = System.currentTimeMillis() - startCipher;
+                System.out.println("[LTPAToken2] decrypt: cipher (" + headerCipher + ", keyLen=" + headerKeyLen + ") took " + cipherMs + " ms"
+                        + "; ciphertext=" + ciphertext.length + " bytes, plaintext=" + tokenData.length + " bytes");
 
             } else {
                 // ---- Legacy token path ----
@@ -351,6 +385,10 @@ public class LTPAToken2 implements Token, Serializable {
             // the signature will always be the last field, but the fields array length may be 2 or 3.
             byte[] signature = Base64Coder.base64Decode(Base64Coder.getBytes(fields[fields.length - 1]));
             setSignature(signature);
+
+            long totalMs = System.currentTimeMillis() - startDecrypt;
+            System.out.println("[LTPAToken2] decrypt: end; sigAlgForVerify=" + sigAlgForVerify
+                    + ", tokenData=" + tokenData.length + " bytes, total=" + totalMs + " ms");
         } catch (BadPaddingException e) {
             if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
                 Tr.event(this, tc, "Caught BadPaddingException while decrypting token, this is only a critical problem if decryption should have worked.", e);
@@ -397,6 +435,13 @@ public class LTPAToken2 implements Token, Serializable {
      * Sign the token passed into the token.
      */
     private final void sign() throws Exception {
+        long startSign = System.currentTimeMillis();
+        String effectiveSigAlg = "pqc".equals(signingMode)
+                ? (mldsaPrivateKey != null ? mldsaPrivateKey.getAlgorithm() : "ML-DSA")
+                : (classicalSigAlg != null ? classicalSigAlg : signatureAlgorithmLabel());
+        System.out.println("[LTPAToken2] sign: start; signingMode=" + signingMode
+                + ", sigAlg=" + effectiveSigAlg + "; time=" + startSign + " ms");
+
         String dataStr = this.getUserData().toString();
         byte[] data = Base64Coder.getBytes(dataStr);
 
@@ -408,34 +453,56 @@ public class LTPAToken2 implements Token, Serializable {
         }
 
         this.setSignature(signature);
+
+        long totalMs = System.currentTimeMillis() - startSign;
+        System.out.println("[LTPAToken2] sign: end; signingMode=" + signingMode
+                + ", sigAlg=" + effectiveSigAlg
+                + ", sigLen=" + (signature != null ? signature.length : 0) + " bytes, total=" + totalMs + " ms");
     }
 
 
     private final byte[] sign(byte[] msg, LTPAPrivateKey privKey) throws Exception {
+        long startRsaSign = System.currentTimeMillis();
+        System.out.println("[LTPAToken2] sign (RSA/" + (classicalSigAlg != null ? classicalSigAlg : signatureAlgorithmLabel()) + "): start; msgLen=" + msg.length + " bytes");
+
         byte[] data;
         synchronized (lockObj1) {
             data = md1JCE.digest(msg);
         }
         byte[][] rsaPrivKey = LTPAKeyUtil.getRawKey(privKey);
         LTPAKeyUtil.setRSAKey(rsaPrivKey);
-        byte[] signature;
-        signature = LTPAKeyUtil.signISO9796(rsaPrivKey, data, 0, data.length);
+        byte[] signature = LTPAKeyUtil.signISO9796(rsaPrivKey, data, 0, data.length);
 
+        long rsaSignMs = System.currentTimeMillis() - startRsaSign;
+        System.out.println("[LTPAToken2] sign (RSA): end; sigLen=" + signature.length + " bytes, total=" + rsaSignMs + " ms");
         return signature;
+    }
+
+    private static String signatureAlgorithmLabel() {
+        return CryptoUtils.getSignatureAlgorithm();
     }
 
     /**
      * Verify the token.
      */
     private final boolean verify() throws Exception {
+        long startVerify = System.currentTimeMillis();
+        System.out.println("[LTPAToken2] verify: start; sigAlgForVerify=" + sigAlgForVerify + "; time=" + startVerify + " ms");
+
         String dataStr = this.getUserData().toString();
         byte[] data = Base64Coder.getBytes(dataStr);
 
+        boolean result;
         if ("ML-DSA".equals(sigAlgForVerify)) {
-            return PQCSignatureHelper.verifyMLDSA(data, signature, mldsaPublicKey, null);
+            result = PQCSignatureHelper.verifyMLDSA(data, signature, mldsaPublicKey, null);
         } else {
-            return verify(data, signature, publicKey);
+            result = verify(data, signature, publicKey);
         }
+
+        long totalMs = System.currentTimeMillis() - startVerify;
+        System.out.println("[LTPAToken2] verify: end; sigAlgForVerify=" + sigAlgForVerify
+                + ", valid=" + result + ", total=" + totalMs + " ms");
+        return result;
     }
 
     private final boolean verify(byte[] msg, byte[] signature, LTPAPublicKey pubKey) throws Exception {
@@ -444,6 +511,9 @@ public class LTPAToken2 implements Token, Serializable {
         } else if (signature == null) {
             throw new IllegalArgumentException("null signature");
         }
+
+        long startRsaVerify = System.currentTimeMillis();
+        System.out.println("[LTPAToken2] verify (RSA/" + sigAlgForVerify + "): start; msgLen=" + msg.length + " bytes, sigLen=" + signature.length + " bytes");
 
         byte[] data;
         synchronized (lockObj2) {
@@ -457,7 +527,11 @@ public class LTPAToken2 implements Token, Serializable {
             Tr.debug(this, tc, "verify: using sigAlg=" + sigAlgForVerify);
         }
         byte[][] rsaPubKey = LTPAKeyUtil.getRawKey(pubKey);
-        return LTPAKeyUtil.verifyISO9796(rsaPubKey, data, 0, data.length, signature, 0, signature.length);
+        boolean valid = LTPAKeyUtil.verifyISO9796(rsaPubKey, data, 0, data.length, signature, 0, signature.length);
+
+        long rsaVerifyMs = System.currentTimeMillis() - startRsaVerify;
+        System.out.println("[LTPAToken2] verify (RSA/" + sigAlgForVerify + "): end; valid=" + valid + ", total=" + rsaVerifyMs + " ms");
+        return valid;
     }
 
     /** {@inheritDoc} */

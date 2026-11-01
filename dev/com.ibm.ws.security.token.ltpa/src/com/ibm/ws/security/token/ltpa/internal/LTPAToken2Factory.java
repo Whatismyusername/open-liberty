@@ -96,10 +96,20 @@ public class LTPAToken2Factory implements TokenFactory {
      * @return Array containing [PrivateKey, PublicKey] or null if construction fails
      */
     private Object[] buildMLDSAKeys(byte[] privateKeyBytes, byte[] publicKeyBytes) {
+        long startBuild = System.currentTimeMillis();
+        System.out.println("[LTPAToken2Factory] buildMLDSAKeys (ML-DSA): start;"
+                + " privateKeyLen=" + (privateKeyBytes != null ? privateKeyBytes.length : 0)
+                + ", publicKeyLen=" + (publicKeyBytes != null ? publicKeyBytes.length : 0) + " bytes");
         try {
+            long startCrypto = System.currentTimeMillis();
             KeyFactory keyFactory = KeyFactory.getInstance("ML-DSA");
             PrivateKey privateKey = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(privateKeyBytes));
             PublicKey  publicKey  = keyFactory.generatePublic(new X509EncodedKeySpec(publicKeyBytes));
+            long cryptoMs = System.currentTimeMillis() - startCrypto;
+
+            long totalMs = System.currentTimeMillis() - startBuild;
+            System.out.println("[LTPAToken2Factory] buildMLDSAKeys (ML-DSA): end;"
+                    + " crypto (KeyFactory+generatePrivate+generatePublic)=" + cryptoMs + " ms, total=" + totalMs + " ms");
             return new Object[] { privateKey, publicKey };
         } catch (Exception e) {
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {

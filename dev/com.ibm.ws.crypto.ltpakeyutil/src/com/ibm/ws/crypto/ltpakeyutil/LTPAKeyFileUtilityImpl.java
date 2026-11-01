@@ -87,14 +87,28 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 	 */
 	protected final Properties generateLTPAKeys(byte[] keyPasswordBytes, byte[] sharedKeyBytes, byte[] privateKeyBytes,
 			byte[] publicKeyBytes, final String realm, String mldsaAlgorithm, int classicalKeySize) throws Exception {
+		long startGenerate = System.currentTimeMillis();
+		System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: start; mldsaAlgorithm=" + mldsaAlgorithm
+				+ ", classicalKeySize=" + classicalKeySize + "; time=" + startGenerate + " ms");
+
 		Properties expProps = null;
 
 		try {
+			// KeyEncryptor construction (password-based key derivation via SHA-256)
+			long startEncryptor = System.currentTimeMillis();
 			KeyEncryptor encryptor = new KeyEncryptor(keyPasswordBytes);
+			long encryptorMs = System.currentTimeMillis() - startEncryptor;
+			System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: KeyEncryptor construction (SHA-256 digest) took " + encryptorMs + " ms");
 
 			// Shared AES key — always required for token payload encryption.
+			long sharedKeyMs = 0;
 			if (sharedKeyBytes == null) {
+				long startSharedKey = System.currentTimeMillis();
 				sharedKeyBytes = LTPACrypto.generateSharedKey();
+				sharedKeyMs = System.currentTimeMillis() - startSharedKey;
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: AES-256 shared key generation took " + sharedKeyMs + " ms");
+			} else {
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: shared key reused (skipped generation)");
 			}
 
 			expProps = new Properties();
@@ -110,7 +124,11 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 				// v1.0 = RSA-1024 (classicalKeySize < 256 bytes).
 				boolean rsa2048 = (classicalKeySize >= 256);
 				expProps.put(LTPA_VERSION_PROPERTY, rsa2048 ? "2.0" : "1.0");
+				// Key encrypting algorithm: AES-CBC-256 for v2.0; FIPS-aware cipher for v1.0
+				String keyEncAlgorithm = rsa2048 ? "AES-CBC-256" : CryptoUtils.getCipher();
 
+				// Shared key encryption
+				long startSharedEncrypt = System.currentTimeMillis();
 				if (rsa2048) {
 					// v2.0: encrypt with AES regardless of FIPS mode so any server can load the file.
 					expProps.put(KEYIMPORT_SECRETKEY_V2,
@@ -120,28 +138,72 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 					expProps.put(KEYIMPORT_SECRETKEY_V1,
 					             Base64Coder.base64EncodeToString(encryptor.encrypt(sharedKeyBytes)));
 				}
+				long sharedEncryptMs = System.currentTimeMillis() - startSharedEncrypt;
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: shared key encryption (keyEncAlgorithm=" + keyEncAlgorithm + ") took " + sharedEncryptMs + " ms");
 
+				// RSA key pair generation (only when keys are not being reused)
+				long keyPairMs = 0;
 				if (publicKeyBytes == null && privateKeyBytes == null) {
+					long startKeyPair = System.currentTimeMillis();
 					LTPAKeyPair pair = LTPADigSignature.generateLTPAKeyPair(classicalKeySize);
 					publicKeyBytes = pair.getPublic().getEncoded();
 					privateKeyBytes = pair.getPrivate().getEncoded();
+					keyPairMs = System.currentTimeMillis() - startKeyPair;
+					System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: RSA-" + (classicalKeySize * 8) + " key pair generation took " + keyPairMs + " ms");
+				} else {
+					System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: RSA key pair reused (skipped generation)");
 				}
+
+				// Private key encryption
+				long startPrivateEncrypt = System.currentTimeMillis();
 				byte[] encryptedPrivateKeyBytes = rsa2048
 				        ? encryptor.encryptAES(privateKeyBytes)
 				        : encryptor.encrypt(privateKeyBytes);
+				long privateEncryptMs = System.currentTimeMillis() - startPrivateEncrypt;
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: RSA private key encryption (keyEncAlgorithm=" + keyEncAlgorithm + ") took " + privateEncryptMs + " ms");
+
 				expProps.put(KEYIMPORT_PRIVATEKEY, Base64Coder.base64EncodeToString(encryptedPrivateKeyBytes));
 				expProps.put(KEYIMPORT_PUBLICKEY, Base64Coder.base64EncodeToString(publicKeyBytes));
+
+				long totalMs = System.currentTimeMillis() - startGenerate;
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (RSA-" + (classicalKeySize * 8) + ", keyEncAlgorithm=" + keyEncAlgorithm + "): end;"
+						+ " encryptor=" + encryptorMs + " ms, sharedKey=" + sharedKeyMs + " ms, sharedEncrypt=" + sharedEncryptMs
+						+ " ms, keyPair=" + keyPairMs + " ms, privateEncrypt=" + privateEncryptMs + " ms, total=" + totalMs + " ms");
 			} else {
 				// v3.0 = PQC (ML-DSA keys only, no RSA keys).
+				// Key encrypting algorithm: always AES-CBC-256 for PQC key files.
+				String keyEncAlgorithm = "AES-CBC-256";
+
 				// Encrypt with AES regardless of FIPS mode so any server can load the file.
 				expProps.put(LTPA_VERSION_PROPERTY, "3.0");
+
+				// Shared key encryption
+				long startSharedEncrypt = System.currentTimeMillis();
 				expProps.put(KEYIMPORT_SECRETKEY_V1,
 				             Base64Coder.base64EncodeToString(encryptor.encryptAES(sharedKeyBytes)));
+				long sharedEncryptMs = System.currentTimeMillis() - startSharedEncrypt;
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: shared key encryption (keyEncAlgorithm=" + keyEncAlgorithm + ") took " + sharedEncryptMs + " ms");
+
+				// ML-DSA key pair generation
+				long startMLDSAKeyPair = System.currentTimeMillis();
 				KeyPair mldsaKeyPair = generateMLDSAKeyPair(mldsaAlgorithm);
+				long mldsaKeyPairMs = System.currentTimeMillis() - startMLDSAKeyPair;
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: " + mldsaAlgorithm + " key pair generation took " + mldsaKeyPairMs + " ms");
+
 				if (mldsaKeyPair != null) {
+					// ML-DSA private key encryption
+					long startMLDSAEncrypt = System.currentTimeMillis();
 					byte[] encryptedMLDSAPrivateKeyBytes = encryptor.encryptAES(mldsaKeyPair.getPrivate().getEncoded());
+					long mldsaEncryptMs = System.currentTimeMillis() - startMLDSAEncrypt;
+					System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: " + mldsaAlgorithm + " private key encryption (keyEncAlgorithm=" + keyEncAlgorithm + ") took " + mldsaEncryptMs + " ms");
+
 					expProps.put(KEYIMPORT_MLDSA_PUBLICKEY, Base64Coder.base64EncodeToString(mldsaKeyPair.getPublic().getEncoded()));
 					expProps.put(KEYIMPORT_MLDSA_PRIVATEKEY, Base64Coder.base64EncodeToString(encryptedMLDSAPrivateKeyBytes));
+
+					long totalMs = System.currentTimeMillis() - startGenerate;
+					System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (" + mldsaAlgorithm + ", keyEncAlgorithm=" + keyEncAlgorithm + "): end;"
+							+ " encryptor=" + encryptorMs + " ms, sharedKey=" + sharedKeyMs + " ms, sharedEncrypt=" + sharedEncryptMs
+							+ " ms, mldsaKeyPair=" + mldsaKeyPairMs + " ms, mldsaEncrypt=" + mldsaEncryptMs + " ms, total=" + totalMs + " ms");
 				}
 			}
 		} catch (Exception e) {
