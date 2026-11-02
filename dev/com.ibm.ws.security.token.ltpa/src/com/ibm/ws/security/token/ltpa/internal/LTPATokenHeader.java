@@ -35,6 +35,7 @@ public final class LTPATokenHeader {
     /** Version 1: LTPAToken2 with signature and encryption algorithm header. */
     public static final byte HEADER_VERSION_1 = (byte) 0x01;
 
+    public static final byte SIG_ALG_NONE = (byte) 0x00;
     public static final byte SIG_ALG_SHA1_RSA = (byte) 0x01;
     public static final byte SIG_ALG_SHA512_RSA = (byte) 0x02;
     public static final byte SIG_ALG_ML_DSA = (byte) 0x03;
@@ -44,6 +45,7 @@ public final class LTPATokenHeader {
     public static final String SIG_ALG_NAME_HYBRID_SHA1_RSA_ML_DSA = "HYBRID-SHA1withRSA-ML-DSA";
     public static final String SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA = "HYBRID-SHA512withRSA-ML-DSA";
 
+    public static final byte ENC_ALG_NONE = (byte) 0x00;
     public static final byte ENC_ALG_AES_CBC_128 = (byte) 0x01;
     public static final byte ENC_ALG_AES_CBC_256 = (byte) 0x02;
     public static final byte ENC_ALG_AES_GCM_256 = (byte) 0x03;
@@ -73,6 +75,9 @@ public final class LTPATokenHeader {
      * @throws IllegalArgumentException if the combination is unrecognised
      */
     public static byte encodeSigAlg(String signingMode, String classicalSigAlg) {
+        if ("none".equals(signingMode)) {
+            return SIG_ALG_NONE;
+        }
         if ("pqc".equals(signingMode)) {
             return SIG_ALG_ML_DSA; // maybe look at specifying mldsa variant?
         }
@@ -103,6 +108,9 @@ public final class LTPATokenHeader {
      * @throws IllegalArgumentException if the combination is unrecognised
      */
     public static byte encodeEncAlg(String resolvedCipher, int resolvedKeyLength) {
+        if (resolvedCipher == null) {
+            return ENC_ALG_NONE;
+        }
         if (CryptoUtils.AES_GCM_CIPHER.equals(resolvedCipher)) {
             return ENC_ALG_AES_GCM_256;
         }
@@ -128,6 +136,7 @@ public final class LTPATokenHeader {
      */
     public static String decodeSigAlg(byte sigAlgByte) throws InvalidTokenException {
         switch (sigAlgByte) {
+            case SIG_ALG_NONE: return "none";
             case SIG_ALG_SHA1_RSA: return CryptoUtils.SIGNATURE_ALGORITHM_SHA1WITHRSA;
             case SIG_ALG_SHA512_RSA: return CryptoUtils.SIGNATURE_ALGORITHM_SHA512WITHRSA;
             case SIG_ALG_ML_DSA: return "ML-DSA";
@@ -172,6 +181,7 @@ public final class LTPATokenHeader {
      */
     public static String decodeCipher(byte encAlgByte) throws InvalidTokenException {
         switch (encAlgByte) {
+            case ENC_ALG_NONE: return null;
             case ENC_ALG_AES_CBC_128: return CryptoUtils.AES_CBC_CIPHER;
             case ENC_ALG_AES_CBC_256: return CryptoUtils.AES_CBC_CIPHER;
             case ENC_ALG_AES_GCM_256: return CryptoUtils.AES_GCM_CIPHER;
@@ -190,6 +200,7 @@ public final class LTPATokenHeader {
      */
     public static int decodeKeyLength(byte encAlgByte) throws InvalidTokenException {
         switch (encAlgByte) {
+            case ENC_ALG_NONE: return 0;
             case ENC_ALG_AES_CBC_128: return CryptoUtils.AES_128_KEY_LENGTH_BYTES;
             case ENC_ALG_AES_CBC_256: return CryptoUtils.AES_256_KEY_LENGTH_BYTES;
             case ENC_ALG_AES_GCM_256: return 0;

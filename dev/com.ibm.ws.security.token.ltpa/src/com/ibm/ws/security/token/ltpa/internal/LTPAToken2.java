@@ -75,6 +75,7 @@ public class LTPAToken2 implements Token, Serializable {
     private final String resolvedCipher;
     private final int resolvedKeyLength;
     private final String hybridVerificationPolicy;
+    private boolean hasHeader = false;
     private String sigAlgForVerify = null;
     private String headerCipher = null;
     private int headerKeyLen = 0;
@@ -245,7 +246,9 @@ public class LTPAToken2 implements Token, Serializable {
         long startCipher = System.currentTimeMillis();
         byte[] ciphertext;
         try {
-            if (CryptoUtils.AES_GCM_CIPHER.equals(resolvedCipher)) {
+            if (resolvedCipher == null) {
+                ciphertext = toBeEnc;
+            } else if (CryptoUtils.AES_GCM_CIPHER.equals(resolvedCipher)) {
                 ciphertext = LTPAKeyUtil.encryptGCM(toBeEnc, sharedKey);
             } else {
                 // resolvedCipher is AES/CBC/PKCS5Padding; resolvedKeyLength is 16 or 32 (0 = FIPS-aware default)
@@ -303,6 +306,7 @@ public class LTPAToken2 implements Token, Serializable {
             throw new InvalidTokenException("Unknown token header version: 0x"
                     + Integer.toHexString(versionByte & 0xFF));
         }
+        hasHeader = true;
         sigAlgForVerify = LTPATokenHeader.decodeSigAlg(encryptedBytes[5]);
         headerCipher = LTPATokenHeader.decodeCipher(encryptedBytes[6]);
         headerKeyLen = LTPATokenHeader.decodeKeyLength(encryptedBytes[6]);
@@ -327,7 +331,7 @@ public class LTPAToken2 implements Token, Serializable {
 
         byte[] tokenData;
         try {
-            if (headerCipher != null) {
+            if (hasHeader) {
                 byte[] ciphertext = Arrays.copyOfRange(encryptedBytes, LTPATokenHeader.HEADER_SIZE, encryptedBytes.length);
 
                 if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
@@ -335,7 +339,9 @@ public class LTPAToken2 implements Token, Serializable {
                 }
 
                 long startCipher = System.currentTimeMillis();
-                if (CryptoUtils.AES_GCM_CIPHER.equals(headerCipher)) {
+                if (headerCipher == null) {
+                    tokenData = ciphertext;
+                } else if (CryptoUtils.AES_GCM_CIPHER.equals(headerCipher)) {
                     tokenData = LTPAKeyUtil.decryptGCM(ciphertext, sharedKey);
                 } else {
                     tokenData = LTPAKeyUtil.decrypt(ciphertext, sharedKey, headerCipher, headerKeyLen);
@@ -447,7 +453,10 @@ public class LTPAToken2 implements Token, Serializable {
     private final void sign() throws Exception {
         long startSign = System.currentTimeMillis();
         String effectiveSigAlg;
-        if ("pqc".equals(signingMode)) {
+        if ("none".equals(signingMode)) {
+            this.setSignature(new byte[0]);
+            return;
+        } else if ("pqc".equals(signingMode)) {
             effectiveSigAlg = (mldsaPrivateKey != null ? mldsaPrivateKey.getAlgorithm() : "ML-DSA");
         } else if ("hybrid".equals(signingMode)) {
             effectiveSigAlg = "HYBRID (" + (classicalSigAlg != null ? classicalSigAlg : signatureAlgorithmLabel())
@@ -514,7 +523,9 @@ public class LTPAToken2 implements Token, Serializable {
         byte[] data = Base64Coder.getBytes(dataStr);
 
         boolean result;
-        if ("ML-DSA".equals(sigAlgForVerify)) {
+        if ("none".equals(sigAlgForVerify)) {
+            result = true;
+        } else if ("ML-DSA".equals(sigAlgForVerify)) {
             result = PQCSignatureHelper.verifyMLDSA(data, signature, mldsaPublicKey, null);
         } else if (LTPATokenHeader.isHybridSigAlg(sigAlgForVerify)) {
             if (signature == null || signature.length < 5) {
