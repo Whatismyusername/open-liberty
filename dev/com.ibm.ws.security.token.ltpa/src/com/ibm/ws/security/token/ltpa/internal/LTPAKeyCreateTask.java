@@ -85,6 +85,7 @@ class LTPAKeyCreateTask implements Runnable {
         tokenFactoryMap.put(LTPAConstants.CONFIGURED_CLASSICAL_SIG_ALG, config.getClassicalSignatureAlgorithm());
         tokenFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_CIPHER, config.getResolvedCipher());
         tokenFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH, config.getResolvedKeyLength());
+        tokenFactoryMap.put(LTPAConstants.CONFIGURED_HYBRID_VERIFY_POLICY, config.getHybridVerificationPolicy());
 
         if ("pqc".equals(signingMode)) {
             // PQC mode — ML-DSA keys only, no RSA keys in the key file.
@@ -92,12 +93,31 @@ class LTPAKeyCreateTask implements Runnable {
             byte[] mldsaPublicKey  = keyInfoManager.getMLDSAPublicKey(primaryKeyFile);
             tokenFactoryMap.put(LTPAConstants.PRIMARY_MLDSA_PRIVATE_KEY, mldsaPrivateKey);
             tokenFactoryMap.put(LTPAConstants.PRIMARY_MLDSA_PUBLIC_KEY, mldsaPublicKey);
+        } else if ("hybrid".equals(signingMode)) {
+            // Hybrid mode — both RSA and ML-DSA keys in the key file.
+            byte[] privKeyBytes = keyInfoManager.getPrivateKey(primaryKeyFile);
+            byte[] pubKeyBytes = keyInfoManager.getPublicKey(primaryKeyFile);
+            if (privKeyBytes != null) {
+                tokenFactoryMap.put(LTPAConstants.PRIMARY_PRIVATE_KEY, new LTPAPrivateKey(privKeyBytes));
+            }
+            if (pubKeyBytes != null) {
+                tokenFactoryMap.put(LTPAConstants.PRIMARY_PUBLIC_KEY, new LTPAPublicKey(pubKeyBytes));
+            }
+
+            byte[] mldsaPrivateKey = keyInfoManager.getMLDSAPrivateKey(primaryKeyFile);
+            byte[] mldsaPublicKey  = keyInfoManager.getMLDSAPublicKey(primaryKeyFile);
+            tokenFactoryMap.put(LTPAConstants.PRIMARY_MLDSA_PRIVATE_KEY, mldsaPrivateKey);
+            tokenFactoryMap.put(LTPAConstants.PRIMARY_MLDSA_PUBLIC_KEY, mldsaPublicKey);
         } else {
             // Classical mode — RSA keys only.
-            LTPAPrivateKey primaryPrivateKey = new LTPAPrivateKey(keyInfoManager.getPrivateKey(primaryKeyFile));
-            LTPAPublicKey primaryPublicKey   = new LTPAPublicKey(keyInfoManager.getPublicKey(primaryKeyFile));
-            tokenFactoryMap.put(LTPAConstants.PRIMARY_PRIVATE_KEY, primaryPrivateKey);
-            tokenFactoryMap.put(LTPAConstants.PRIMARY_PUBLIC_KEY, primaryPublicKey);
+            byte[] privKeyBytes = keyInfoManager.getPrivateKey(primaryKeyFile);
+            byte[] pubKeyBytes = keyInfoManager.getPublicKey(primaryKeyFile);
+            if (privKeyBytes != null) {
+                tokenFactoryMap.put(LTPAConstants.PRIMARY_PRIVATE_KEY, new LTPAPrivateKey(privKeyBytes));
+            }
+            if (pubKeyBytes != null) {
+                tokenFactoryMap.put(LTPAConstants.PRIMARY_PUBLIC_KEY, new LTPAPublicKey(pubKeyBytes));
+            }
         }
 
         return tokenFactoryMap;

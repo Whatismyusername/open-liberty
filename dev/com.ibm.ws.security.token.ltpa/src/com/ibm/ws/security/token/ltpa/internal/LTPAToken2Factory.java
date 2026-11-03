@@ -51,6 +51,7 @@ public class LTPAToken2Factory implements TokenFactory {
     private String classicalSigAlg;
     private String resolvedCipher;
     private int resolvedKeyLength;
+    private String hybridVerificationPolicy;
 
     private PrivateKey primaryMLDSAPrivateKey;
     private PublicKey primaryMLDSAPublicKey;
@@ -72,6 +73,10 @@ public class LTPAToken2Factory implements TokenFactory {
         classicalSigAlg = (String) tokenFactoryMap.get(LTPAConstants.CONFIGURED_CLASSICAL_SIG_ALG);
         resolvedCipher = (String) tokenFactoryMap.get(LTPAConstants.CONFIGURED_RESOLVED_CIPHER);
         resolvedKeyLength = (int) tokenFactoryMap.get(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH);
+        hybridVerificationPolicy = (String) tokenFactoryMap.get(LTPAConstants.CONFIGURED_HYBRID_VERIFY_POLICY);
+        if (hybridVerificationPolicy == null) {
+            hybridVerificationPolicy = "both";
+        }
 
         byte[] mldsaPrivBytes = (byte[]) tokenFactoryMap.get(LTPAConstants.PRIMARY_MLDSA_PRIVATE_KEY);
         byte[] mldsaPubBytes = (byte[]) tokenFactoryMap.get(LTPAConstants.PRIMARY_MLDSA_PUBLIC_KEY);
@@ -155,6 +160,18 @@ public class LTPAToken2Factory implements TokenFactory {
             } else {
                 Tr.warning(tc, "ML-DSA keys not available for signingMode=" + signingMode + ", falling back to classical");
             }
+        } else if ("hybrid".equals(signingMode)) {
+            if (primaryMLDSAPrivateKey != null && primaryMLDSAPublicKey != null && primaryPrivateKey != null && primaryPublicKey != null) {
+                if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                    Tr.debug(tc, "Creating token with signingMode=" + signingMode);
+                }
+                return new LTPAToken2(userUniqueId, expirationInMinutes,
+                                      primarySharedKey, primaryPrivateKey, primaryPublicKey,
+                                      primaryMLDSAPrivateKey, primaryMLDSAPublicKey, signingMode,
+                                      classicalSigAlg, resolvedCipher, resolvedKeyLength);
+            } else {
+                Tr.warning(tc, "Hybrid keys (RSA and ML-DSA) not fully available for signingMode=" + signingMode + ", falling back to classical");
+            }
         }
 
         // classical / none / fallback
@@ -202,7 +219,7 @@ public class LTPAToken2Factory implements TokenFactory {
                 if (primaryMLDSAPublicKey != null) {
                     validatedToken = new LTPAToken2(tokenBytes, primarySharedKey, primaryPrivateKey, primaryPublicKey,
                                                    primaryMLDSAPrivateKey, primaryMLDSAPublicKey, signingMode,
-                                                   expDiffAllowed, removeAttributes);
+                                                   hybridVerificationPolicy, expDiffAllowed, removeAttributes);
                 } else {
                     validatedToken = new LTPAToken2(tokenBytes, primarySharedKey, primaryPrivateKey, primaryPublicKey, expDiffAllowed, removeAttributes);
                 }
@@ -262,7 +279,7 @@ public class LTPAToken2Factory implements TokenFactory {
                                     // which keys happen to be present in this validation entry.
                                     validatedToken = new LTPAToken2(tokenBytes, sharedKeyForValidation, ltpaPrivateKeyForValidation, ltpaPublicKeyForValidation,
                                                                    (PrivateKey) valMldsaKeys[0], (PublicKey) valMldsaKeys[1], signingMode,
-                                                                   expDiffAllowed, removeAttributes);
+                                                                   hybridVerificationPolicy, expDiffAllowed, removeAttributes);
                                 } else {
                                     validatedToken = new LTPAToken2(tokenBytes, sharedKeyForValidation, ltpaPrivateKeyForValidation, ltpaPublicKeyForValidation, expDiffAllowed, removeAttributes);
                                 }

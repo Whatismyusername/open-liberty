@@ -74,6 +74,7 @@ public class LTPAToken2 implements Token, Serializable {
     private final String classicalSigAlg;
     private final String resolvedCipher;
     private final int resolvedKeyLength;
+    private final String hybridVerificationPolicy;
     private String sigAlgForVerify = null;
     private String headerCipher = null;
     private int headerKeyLen = 0;
@@ -103,12 +104,18 @@ public class LTPAToken2 implements Token, Serializable {
      */
      public LTPAToken2(byte[] tokenBytes, @Sensitive byte[] sharedKey, LTPAPrivateKey privateKey, LTPAPublicKey publicKey, long expDiffAllowed,
                         String... attributes) throws InvalidTokenException, TokenExpiredException {
-        this(tokenBytes, sharedKey, privateKey, publicKey, null, null, PQCConstants.CRYPTO_MODE_CLASSICAL, expDiffAllowed, attributes);
+        this(tokenBytes, sharedKey, privateKey, publicKey, null, null, PQCConstants.CRYPTO_MODE_CLASSICAL, "both", expDiffAllowed, attributes);
      }
 
     public LTPAToken2(byte[] tokenBytes, @Sensitive byte[] sharedKey, LTPAPrivateKey privateKey, LTPAPublicKey publicKey,
                       PrivateKey mldsaPrivateKey, PublicKey mldsaPublicKey, String signingMode, long expDiffAllowed,
                       String... attributes) throws InvalidTokenException, TokenExpiredException {
+        this(tokenBytes, sharedKey, privateKey, publicKey, mldsaPrivateKey, mldsaPublicKey, signingMode, "both", expDiffAllowed, attributes);
+    }
+
+    public LTPAToken2(byte[] tokenBytes, @Sensitive byte[] sharedKey, LTPAPrivateKey privateKey, LTPAPublicKey publicKey,
+                      PrivateKey mldsaPrivateKey, PublicKey mldsaPublicKey, String signingMode, String hybridVerificationPolicy,
+                      long expDiffAllowed, String... attributes) throws InvalidTokenException, TokenExpiredException {
         checkTokenBytes(tokenBytes);
         this.signature = null;
         this.encryptedBytes = tokenBytes.clone();
@@ -121,6 +128,7 @@ public class LTPAToken2 implements Token, Serializable {
         this.classicalSigAlg = null; // not used on validation path
         this.resolvedCipher = null;  // not used on validation path
         this.resolvedKeyLength = 0;  // not used on validation path
+        this.hybridVerificationPolicy = (hybridVerificationPolicy != null) ? hybridVerificationPolicy : "both";
         this.expirationInMilliseconds = 0;
         this.expirationDifferenceAllowed = expDiffAllowed;
         extractTokenHeader();
@@ -169,6 +177,7 @@ public class LTPAToken2 implements Token, Serializable {
         this.classicalSigAlg = classicalSigAlg;
         this.resolvedCipher = resolvedCipher;
         this.resolvedKeyLength = resolvedKeyLength;
+        this.hybridVerificationPolicy = "both";
         this.userData = new UserData(accessID);
         setExpiration(expirationInMinutes);
     }
@@ -194,6 +203,7 @@ public class LTPAToken2 implements Token, Serializable {
         this.classicalSigAlg = null;
         this.resolvedCipher = null;
         this.resolvedKeyLength = 0;
+        this.hybridVerificationPolicy = "both";
         this.userData = userdata;
         setExpiration(expirationInMinutes);
     }
@@ -436,9 +446,15 @@ public class LTPAToken2 implements Token, Serializable {
      */
     private final void sign() throws Exception {
         long startSign = System.currentTimeMillis();
-        String effectiveSigAlg = "pqc".equals(signingMode)
-                ? (mldsaPrivateKey != null ? mldsaPrivateKey.getAlgorithm() : "ML-DSA")
-                : (classicalSigAlg != null ? classicalSigAlg : signatureAlgorithmLabel());
+        String effectiveSigAlg;
+        if ("pqc".equals(signingMode)) {
+            effectiveSigAlg = (mldsaPrivateKey != null ? mldsaPrivateKey.getAlgorithm() : "ML-DSA");
+        } else if ("hybrid".equals(signingMode)) {
+            effectiveSigAlg = "HYBRID (" + (classicalSigAlg != null ? classicalSigAlg : signatureAlgorithmLabel())
+                    + " + " + (mldsaPrivateKey != null ? mldsaPrivateKey.getAlgorithm() : "ML-DSA") + ")";
+        } else {
+            effectiveSigAlg = (classicalSigAlg != null ? classicalSigAlg : signatureAlgorithmLabel());
+        }
         System.out.println("[LTPAToken2] sign: start; signingMode=" + signingMode
                 + ", sigAlg=" + effectiveSigAlg + "; time=" + startSign + " ms");
 
@@ -448,6 +464,10 @@ public class LTPAToken2 implements Token, Serializable {
         byte[] signature;
         if ("pqc".equals(signingMode)) {
             signature = PQCSignatureHelper.signMLDSA(data, mldsaPrivateKey, null);
+        } else if ("hybrid".equals(signingMode)) {
+            byte[] rsaSig = sign(data, this.privateKey);
+            byte[] mldsaSig = PQCSignatureHelper.signMLDSA(data, mldsaPrivateKey, null);
+            signature = PQCSignatureHelper.combineSignatures(rsaSig, mldsaSig);
         } else {
             signature = sign(data, this.privateKey);
         }
@@ -487,7 +507,8 @@ public class LTPAToken2 implements Token, Serializable {
      */
     private final boolean verify() throws Exception {
         long startVerify = System.currentTimeMillis();
-        System.out.println("[LTPAToken2] verify: start; sigAlgForVerify=" + sigAlgForVerify + "; time=" + startVerify + " ms");
+        System.out.println("[LTPAToken2] verify: start; sigAlgForVerify=" + sigAlgForVerify
+                + ", hybridPolicy=" + hybridVerificationPolicy + "; time=" + startVerify + " ms");
 
         String dataStr = this.getUserData().toString();
         byte[] data = Base64Coder.getBytes(dataStr);
@@ -495,12 +516,34 @@ public class LTPAToken2 implements Token, Serializable {
         boolean result;
         if ("ML-DSA".equals(sigAlgForVerify)) {
             result = PQCSignatureHelper.verifyMLDSA(data, signature, mldsaPublicKey, null);
+        } else if (LTPATokenHeader.isHybridSigAlg(sigAlgForVerify)) {
+            if (signature == null || signature.length < 5) {
+                result = false;
+            } else {
+                long startSplit = System.currentTimeMillis();
+                byte[][] splitSigs = PQCSignatureHelper.splitSignatures(signature);
+                long splitMs = System.currentTimeMillis() - startSplit;
+                byte[] rsaSig = splitSigs[0];
+                byte[] mldsaSig = splitSigs[1];
+
+                if ("pqc".equalsIgnoreCase(hybridVerificationPolicy)) {
+                    result = (mldsaPublicKey != null) && PQCSignatureHelper.verifyMLDSA(data, mldsaSig, mldsaPublicKey, null);
+                } else if ("classical".equalsIgnoreCase(hybridVerificationPolicy)) {
+                    result = (publicKey != null) && verify(data, rsaSig, publicKey);
+                } else {
+                    boolean rsaValid = (publicKey != null) && verify(data, rsaSig, publicKey);
+                    boolean mldsaValid = (mldsaPublicKey != null) && PQCSignatureHelper.verifyMLDSA(data, mldsaSig, mldsaPublicKey, null);
+                    result = rsaValid && mldsaValid;
+                }
+                System.out.println("[LTPAToken2] verify (Hybrid/" + hybridVerificationPolicy + "): split=" + splitMs + " ms, valid=" + result);
+            }
         } else {
             result = verify(data, signature, publicKey);
         }
 
         long totalMs = System.currentTimeMillis() - startVerify;
         System.out.println("[LTPAToken2] verify: end; sigAlgForVerify=" + sigAlgForVerify
+                + ", hybridPolicy=" + hybridVerificationPolicy
                 + ", valid=" + result + ", total=" + totalMs + " ms");
         return result;
     }

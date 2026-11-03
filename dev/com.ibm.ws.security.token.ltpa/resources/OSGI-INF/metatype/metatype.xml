@@ -61,6 +61,7 @@
             default="classical">
             <Option label="%signingMode.classical" value="classical"/>
             <Option label="%signingMode.pqc" value="pqc"/>
+            <Option label="%signingMode.hybrid" value="hybrid"/>
             <Option label="%signingMode.none" value="none"/>
         </AD>
         <AD id="classicalSignatureAlgorithm" name="%classicalSignatureAlgorithm" description="%classicalSignatureAlgorithm.desc"
@@ -86,6 +87,13 @@
             <Option label="%encryptionAlgorithm.aes256cbc" value="AES-CBC-256"/>
             <Option label="%encryptionAlgorithm.aes256gcm" value="AES-GCM-256"/>
             <Option label="%encryptionAlgorithm.none" value="none"/>
+        </AD>
+        <AD id="hybridVerificationPolicy" name="%hybridVerificationPolicy" description="%hybridVerificationPolicy.desc"
+            required="false" type="String"
+            default="both">
+            <Option label="%hybridVerificationPolicy.both" value="both"/>
+            <Option label="%hybridVerificationPolicy.pqc" value="pqc"/>
+            <Option label="%hybridVerificationPolicy.classical" value="classical"/>
         </AD>
     </OCD>
 

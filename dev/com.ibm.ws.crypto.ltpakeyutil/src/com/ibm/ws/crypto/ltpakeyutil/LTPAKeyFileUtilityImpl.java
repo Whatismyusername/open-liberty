@@ -199,12 +199,37 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 
 					expProps.put(KEYIMPORT_MLDSA_PUBLICKEY, Base64Coder.base64EncodeToString(mldsaKeyPair.getPublic().getEncoded()));
 					expProps.put(KEYIMPORT_MLDSA_PRIVATEKEY, Base64Coder.base64EncodeToString(encryptedMLDSAPrivateKeyBytes));
-
-					long totalMs = System.currentTimeMillis() - startGenerate;
-					System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (" + mldsaAlgorithm + ", keyEncAlgorithm=" + keyEncAlgorithm + "): end;"
-							+ " encryptor=" + encryptorMs + " ms, sharedKey=" + sharedKeyMs + " ms, sharedEncrypt=" + sharedEncryptMs
-							+ " ms, mldsaKeyPair=" + mldsaKeyPairMs + " ms, mldsaEncrypt=" + mldsaEncryptMs + " ms, total=" + totalMs + " ms");
 				}
+
+				// RSA key pair generation: only when classicalKeySize > 0 (Hybrid mode)
+				if (classicalKeySize > 0) {
+					long keyPairMs = 0;
+					if (publicKeyBytes == null && privateKeyBytes == null) {
+						long startKeyPair = System.currentTimeMillis();
+						LTPAKeyPair pair = LTPADigSignature.generateLTPAKeyPair(classicalKeySize);
+						publicKeyBytes = pair.getPublic().getEncoded();
+						privateKeyBytes = pair.getPrivate().getEncoded();
+						keyPairMs = System.currentTimeMillis() - startKeyPair;
+						System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (hybrid): RSA-" + (classicalKeySize * 8) + " key pair generation took " + keyPairMs + " ms");
+					} else {
+						System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (hybrid): RSA key pair reused (skipped generation)");
+					}
+
+					if (privateKeyBytes != null) {
+						long startPrivateEncrypt = System.currentTimeMillis();
+						byte[] encryptedPrivateKeyBytes = encryptor.encryptAES(privateKeyBytes);
+						long privateEncryptMs = System.currentTimeMillis() - startPrivateEncrypt;
+						System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (hybrid): RSA private key encryption took " + privateEncryptMs + " ms");
+
+						expProps.put(KEYIMPORT_PRIVATEKEY, Base64Coder.base64EncodeToString(encryptedPrivateKeyBytes));
+						expProps.put(KEYIMPORT_PUBLICKEY, Base64Coder.base64EncodeToString(publicKeyBytes));
+					}
+				}
+
+				long totalMs = System.currentTimeMillis() - startGenerate;
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (" + mldsaAlgorithm + (classicalKeySize > 0 ? (" + RSA-" + (classicalKeySize * 8)) : "") + ", keyEncAlgorithm=" + keyEncAlgorithm + "): end;"
+						+ " encryptor=" + encryptorMs + " ms, sharedKey=" + sharedKeyMs + " ms, sharedEncrypt=" + sharedEncryptMs
+						+ " ms, mldsaKeyPair=" + mldsaKeyPairMs + " ms, total=" + totalMs + " ms");
 			}
 		} catch (Exception e) {
 			throw e;

@@ -112,6 +112,12 @@ public interface LTPAConfiguration {
     public static final String CFG_KEY_ENCRYPTION_ALGORITHM = "encryptionAlgorithm";
 
     /**
+     * The policy for verifying signatures on reception of a hybrid LTPA token.
+     * Valid values: "both" (default), "pqc", "classical"
+     */
+    public static final String CFG_KEY_HYBRID_VERIFICATION_POLICY = "hybridVerificationPolicy";
+
+    /**
      * Internal property used to distinguish configured validation keys from non-configured validation keys.
      * Configured validation keys are explicitly defined in the server.xml using <validationKeys /> and require a password.
      * Non-configured validation keys are picked up when <ltpa monitorValidationKeysDir="true" /> is set and uses the same password as the primary ltpa key.
@@ -204,6 +210,13 @@ public interface LTPAConfiguration {
      * @return The encryption algorithm: "AES-CBC-128", "AES-CBC-256", "AES-GCM-256", or "none"
      */
     String getEncryptionAlgorithm();
+
+    /**
+     * Get the hybrid verification policy for LTPA tokens.
+     *
+     * @return The verification policy: "both", "pqc", or "classical"
+     */
+    String getHybridVerificationPolicy();
 
     /**
      * Get the resolved JCE cipher string for use in encrypt/decrypt operations.

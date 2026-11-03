@@ -79,4 +79,7 @@ public class LTPAConstants {
 
     /** AES key length in bytes resolved from encryptionAlgorithm (e.g. 16 for AES-128, 32 for AES-256). */
     protected static final String CONFIGURED_RESOLVED_KEY_LENGTH = "configured_resolved_key_length";
+
+    /** Effective hybrid verification policy (both, pqc, classical). */
+    protected static final String CONFIGURED_HYBRID_VERIFY_POLICY = "configured_hybrid_verify_policy";
 }

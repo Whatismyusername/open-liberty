@@ -38,6 +38,11 @@ public final class LTPATokenHeader {
     public static final byte SIG_ALG_SHA1_RSA = (byte) 0x01;
     public static final byte SIG_ALG_SHA512_RSA = (byte) 0x02;
     public static final byte SIG_ALG_ML_DSA = (byte) 0x03;
+    public static final byte SIG_ALG_HYBRID_SHA1_RSA_ML_DSA = (byte) 0x04;
+    public static final byte SIG_ALG_HYBRID_SHA512_RSA_ML_DSA = (byte) 0x05;
+
+    public static final String SIG_ALG_NAME_HYBRID_SHA1_RSA_ML_DSA = "HYBRID-SHA1withRSA-ML-DSA";
+    public static final String SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA = "HYBRID-SHA512withRSA-ML-DSA";
 
     public static final byte ENC_ALG_AES_CBC_128 = (byte) 0x01;
     public static final byte ENC_ALG_AES_CBC_256 = (byte) 0x02;
@@ -70,6 +75,15 @@ public final class LTPATokenHeader {
     public static byte encodeSigAlg(String signingMode, String classicalSigAlg) {
         if ("pqc".equals(signingMode)) {
             return SIG_ALG_ML_DSA; // maybe look at specifying mldsa variant?
+        }
+        if ("hybrid".equals(signingMode)) {
+            if (CryptoUtils.SIGNATURE_ALGORITHM_SHA512WITHRSA.equals(classicalSigAlg)) {
+                return SIG_ALG_HYBRID_SHA512_RSA_ML_DSA;
+            }
+            if (CryptoUtils.SIGNATURE_ALGORITHM_SHA1WITHRSA.equals(classicalSigAlg)) {
+                return SIG_ALG_HYBRID_SHA1_RSA_ML_DSA;
+            }
+            throw new IllegalArgumentException("Unrecognised classicalSigAlg for hybrid header encoding: " + classicalSigAlg);
         }
         if (CryptoUtils.SIGNATURE_ALGORITHM_SHA1WITHRSA.equals(classicalSigAlg)) {
             return SIG_ALG_SHA1_RSA;
@@ -117,10 +131,36 @@ public final class LTPATokenHeader {
             case SIG_ALG_SHA1_RSA: return CryptoUtils.SIGNATURE_ALGORITHM_SHA1WITHRSA;
             case SIG_ALG_SHA512_RSA: return CryptoUtils.SIGNATURE_ALGORITHM_SHA512WITHRSA;
             case SIG_ALG_ML_DSA: return "ML-DSA";
+            case SIG_ALG_HYBRID_SHA1_RSA_ML_DSA: return SIG_ALG_NAME_HYBRID_SHA1_RSA_ML_DSA;
+            case SIG_ALG_HYBRID_SHA512_RSA_ML_DSA: return SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA;
             default:
                 throw new InvalidTokenException("Unknown SigAlg byte in token header: 0x"
                         + Integer.toHexString(sigAlgByte & 0xFF));
         }
+    }
+
+    /**
+     * Checks if the given SigAlg header byte represents a hybrid signature algorithm.
+     */
+    public static boolean isHybridSigAlg(byte sigAlgByte) {
+        return sigAlgByte == SIG_ALG_HYBRID_SHA1_RSA_ML_DSA || sigAlgByte == SIG_ALG_HYBRID_SHA512_RSA_ML_DSA;
+    }
+
+    /**
+     * Checks if the given decoded signature algorithm string represents a hybrid signature algorithm.
+     */
+    public static boolean isHybridSigAlg(String sigAlg) {
+        return SIG_ALG_NAME_HYBRID_SHA1_RSA_ML_DSA.equals(sigAlg) || SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA.equals(sigAlg);
+    }
+
+    /**
+     * Extracts the underlying classical signature algorithm from a hybrid signature algorithm name.
+     */
+    public static String getClassicalSigAlgFromHybrid(String hybridSigAlg) {
+        if (SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA.equals(hybridSigAlg)) {
+            return CryptoUtils.SIGNATURE_ALGORITHM_SHA512WITHRSA;
+        }
+        return CryptoUtils.SIGNATURE_ALGORITHM_SHA1WITHRSA;
     }
 
     /**

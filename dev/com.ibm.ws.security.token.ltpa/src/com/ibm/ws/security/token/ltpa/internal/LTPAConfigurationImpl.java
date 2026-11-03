@@ -121,6 +121,7 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
     private int classicalKeySize = 0;
     private String pqcSignatureAlgorithm = null;
     private String encryptionAlgorithm = null;
+    private String hybridVerificationPolicy = "both";
     // Resolved cipher string and key length derived from encryptionAlgorithm by resolveSigningConfig()
     private String resolvedCipher = null;
     private int resolvedKeyLength = 0;
@@ -197,6 +198,7 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
         int oldClassicalKeySize = classicalKeySize;
         String oldPqcSignatureAlgorithm = pqcSignatureAlgorithm;
         String oldEncryptionAlgorithm = encryptionAlgorithm;
+        String oldHybridVerificationPolicy = hybridVerificationPolicy;
 
         if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
             Tr.debug(tc, "oldValidationKeys: " + maskKeysPasswords(oldValidationKeys));
@@ -206,7 +208,7 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
             loadConfig(props);
 
             if (isKeysConfigChanged(oldKeyImportFile, oldKeyTokenExpiration, oldExpirationDifferenceAllowed, oldMonitorValidationKeysDir, oldUpdateTrigger, oldValidationKeys,
-                                    oldTokenVersion, oldSigningMode, oldClassicalSignatureAlgorithm, oldClassicalKeySize, oldPqcSignatureAlgorithm, oldEncryptionAlgorithm)) {
+                                    oldTokenVersion, oldSigningMode, oldClassicalSignatureAlgorithm, oldClassicalKeySize, oldPqcSignatureAlgorithm, oldEncryptionAlgorithm, oldHybridVerificationPolicy)) {
                 unsetFileMonitorRegistration();
                 Tr.audit(tc, "LTPA_KEYS_TO_LOAD", primaryKeyImportFile);
                 setupRuntimeLTPAInfrastructure();
@@ -274,6 +276,16 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "Encryption algorithm: " + encryptionAlgorithm);
             }
+        }
+
+        Object hybridVerifyPolicyObj = props.get(CFG_KEY_HYBRID_VERIFICATION_POLICY);
+        if (hybridVerifyPolicyObj != null) {
+            hybridVerificationPolicy = (String) hybridVerifyPolicyObj;
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(tc, "Hybrid verification policy: " + hybridVerificationPolicy);
+            }
+        } else {
+            hybridVerificationPolicy = "both";
         }
 
         // Perform cross validation
@@ -371,6 +383,21 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
                 break;
 
             case "pqc":
+                if (pqcSignatureAlgorithm == null || pqcSignatureAlgorithm.isEmpty()) {
+                    pqcSignatureAlgorithm = PQCConstants.ALGORITHM_ML_DSA_65;
+                }
+                if (encryptionAlgorithm == null || encryptionAlgorithm.isEmpty()) {
+                    encryptionAlgorithm = "AES-GCM-256";
+                }
+                break;
+
+            case "hybrid":
+                if (classicalSignatureAlgorithm == null || classicalSignatureAlgorithm.isEmpty()) {
+                    classicalSignatureAlgorithm = fips ? CryptoUtils.SIGNATURE_ALGORITHM_SHA512WITHRSA : CryptoUtils.SIGNATURE_ALGORITHM_SHA1WITHRSA;
+                }
+                if (classicalKeySize <= 0) {
+                    classicalKeySize = fips ? 2048 : 1024;
+                }
                 if (pqcSignatureAlgorithm == null || pqcSignatureAlgorithm.isEmpty()) {
                     pqcSignatureAlgorithm = PQCConstants.ALGORITHM_ML_DSA_65;
                 }
@@ -796,7 +823,8 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
                                         @Sensitive List<Properties> oldValidationKeys,
                                         String oldTokenVersion, String oldSigningMode,
                                         String oldClassicalSignatureAlgorithm, int oldClassicalKeySize,
-                                        String oldPqcSignatureAlgorithm, String oldEncryptionAlgorithm) {
+                                        String oldPqcSignatureAlgorithm, String oldEncryptionAlgorithm,
+                                        String oldHybridVerificationPolicy) {
         return ((oldKeyImportFile.equals(primaryKeyImportFile) == false)
                 || (oldKeyTokenExpiration != keyTokenExpiration)
                 || (oldExpirationDifferenceAllowed != expirationDifferenceAllowed)
@@ -808,6 +836,7 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
                 || (oldClassicalKeySize != classicalKeySize)
                 || (oldPqcSignatureAlgorithm != pqcSignatureAlgorithm)
                 || (oldEncryptionAlgorithm != encryptionAlgorithm)
+                || (oldHybridVerificationPolicy != hybridVerificationPolicy)
                 || (isValidationKeysConfigured(oldValidationKeys)));
     }
 
@@ -1022,6 +1051,11 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
     @Override
     public String getEncryptionAlgorithm() {
         return encryptionAlgorithm;
+    }
+
+    @Override
+    public String getHybridVerificationPolicy() {
+        return hybridVerificationPolicy;
     }
 
     @Override

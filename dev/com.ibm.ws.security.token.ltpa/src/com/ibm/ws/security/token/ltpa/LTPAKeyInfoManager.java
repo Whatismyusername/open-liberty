@@ -240,16 +240,24 @@ public class LTPAKeyInfoManager {
             }
 
             boolean isPqcMode = "pqc".equals(signingMode);
+            boolean isHybridMode = "hybrid".equals(signingMode);
             boolean isFips = CryptoUtils.isFips140_3Enabled();
 
             if (!validationKey) {
                 // Determine whether the primary key file version is compatible with the resolved
-                // configuration (PQC mode vs. classical RSA key size).
+                // configuration (PQC mode vs. hybrid mode vs. classical RSA key size).
                 boolean versionMismatch = false;
                 String restoreSuffix = null;
 
                 if (isPqcMode) {
                     if (!"3.0".equals(version)) {
+                        versionMismatch = true;
+                        restoreSuffix = suffixPqc;
+                    }
+                } else if (isHybridMode) {
+                    String privKey = props.getProperty(LTPAKeyFileUtility.KEYIMPORT_PRIVATEKEY);
+                    String mldsaPrivKey = props.getProperty(LTPAKeyFileUtility.KEYIMPORT_MLDSA_PRIVATEKEY);
+                    if (!"3.0".equals(version) || privKey == null || mldsaPrivKey == null) {
                         versionMismatch = true;
                         restoreSuffix = suffixPqc;
                     }
@@ -393,7 +401,9 @@ public class LTPAKeyInfoManager {
 
         if (validationKey) {
             LTPAValidationKeysInfo info;
-            if (mldsaPublicKey != null) {
+            if (mldsaPublicKey != null && publicKey != null) {
+                info = new LTPAValidationKeysInfo(keyImportFile, secretKey, privateKey, publicKey, mldsaPrivateKey, mldsaPublicKey, validUntilDateOdt);
+            } else if (mldsaPublicKey != null) {
                 info = new LTPAValidationKeysInfo(keyImportFile, secretKey, mldsaPrivateKey, mldsaPublicKey, validUntilDateOdt, true);
             } else {
                 info = new LTPAValidationKeysInfo(keyImportFile, secretKey, privateKey, publicKey, validUntilDateOdt);
@@ -664,6 +674,8 @@ public class LTPAKeyInfoManager {
         Properties props;
         if ("pqc".equals(signingMode)) {
             props = creator.createLTPAKeysFile(locService, keyImportFile, keyPassword, mldsaAlgorithm);
+        } else if ("hybrid".equals(signingMode)) {
+            props = creator.createLTPAKeysFile(locService, keyImportFile, keyPassword, mldsaAlgorithm, classicalKeySize);
         } else {
             props = creator.createLTPAKeysFile(locService, keyImportFile, keyPassword, classicalKeySize);
         }
