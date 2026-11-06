@@ -306,6 +306,10 @@ public class LTPAToken2 implements Token, Serializable {
             throw new InvalidTokenException("Unknown token header version: 0x"
                     + Integer.toHexString(versionByte & 0xFF));
         }
+        if (encryptedBytes[5] == LTPATokenHeader.SIG_ALG_NONE
+            && encryptedBytes[6] == LTPATokenHeader.ENC_ALG_NONE) {
+            throw new InvalidTokenException("Token header specifies neither signing nor encryption");
+        }
         hasHeader = true;
         sigAlgForVerify = LTPATokenHeader.decodeSigAlg(encryptedBytes[5]);
         headerCipher = LTPATokenHeader.decodeCipher(encryptedBytes[6]);
