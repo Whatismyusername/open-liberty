@@ -429,6 +429,10 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
                 resolvedCipher = CryptoUtils.AES_GCM_CIPHER;
                 resolvedKeyLength = CryptoUtils.AES_256_KEY_LENGTH_BYTES;
                 break;
+            case "KDF":
+                resolvedCipher = CryptoUtils.KDF_AES_GCM_CIPHER;
+                resolvedKeyLength = CryptoUtils.AES_256_KEY_LENGTH_BYTES;
+                break;
             case "none":
                 resolvedCipher = null;
                 resolvedKeyLength = 0;

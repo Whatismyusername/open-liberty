@@ -112,6 +112,7 @@ public class CryptoUtils {
     public static final String ENCRYPT_MODE_ECB = "ECB";
 
     public static final String AES_GCM_CIPHER = "AES/GCM/NoPadding";
+    public static final String KDF_AES_GCM_CIPHER = "KDF-AES-GCM-256";
     /** Cipher used for LTPA Password */
     public static final String DES_ECB_CIPHER = "DESede/ECB/PKCS5Padding";
     /** Cipher used for LTPA tokens and audit. */

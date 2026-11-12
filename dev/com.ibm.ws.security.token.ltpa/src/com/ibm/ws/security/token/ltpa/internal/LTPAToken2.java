@@ -248,6 +248,8 @@ public class LTPAToken2 implements Token, Serializable {
         try {
             if (resolvedCipher == null) {
                 ciphertext = toBeEnc;
+            } else if (CryptoUtils.KDF_AES_GCM_CIPHER.equals(resolvedCipher)) {
+                ciphertext = LTPAKeyUtil.encryptKDF(toBeEnc, sharedKey);
             } else if (CryptoUtils.AES_GCM_CIPHER.equals(resolvedCipher)) {
                 ciphertext = LTPAKeyUtil.encryptGCM(toBeEnc, sharedKey);
             } else {
@@ -345,6 +347,8 @@ public class LTPAToken2 implements Token, Serializable {
                 long startCipher = System.currentTimeMillis();
                 if (headerCipher == null) {
                     tokenData = ciphertext;
+                } else if (CryptoUtils.KDF_AES_GCM_CIPHER.equals(headerCipher)) {
+                    tokenData = LTPAKeyUtil.decryptKDF(ciphertext, sharedKey);
                 } else if (CryptoUtils.AES_GCM_CIPHER.equals(headerCipher)) {
                     tokenData = LTPAKeyUtil.decryptGCM(ciphertext, sharedKey);
                 } else {

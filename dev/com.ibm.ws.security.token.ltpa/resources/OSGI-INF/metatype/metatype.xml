@@ -86,6 +86,7 @@
             <Option label="%encryptionAlgorithm.aes128cbc" value="AES-CBC-128"/>
             <Option label="%encryptionAlgorithm.aes256cbc" value="AES-CBC-256"/>
             <Option label="%encryptionAlgorithm.aes256gcm" value="AES-GCM-256"/>
+            <Option label="%encryptionAlgorithm.kdf" value="KDF"/>
             <Option label="%encryptionAlgorithm.none" value="none"/>
         </AD>
         <AD id="hybridVerificationPolicy" name="%hybridVerificationPolicy" description="%hybridVerificationPolicy.desc"

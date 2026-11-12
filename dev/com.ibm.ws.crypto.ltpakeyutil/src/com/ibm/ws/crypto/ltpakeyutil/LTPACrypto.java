@@ -13,6 +13,7 @@
 package com.ibm.ws.crypto.ltpakeyutil;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
@@ -34,6 +35,7 @@ import java.util.Comparator;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.crypto.Cipher;
+import javax.crypto.Mac;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
@@ -41,6 +43,7 @@ import javax.crypto.spec.DESedeKeySpec;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import com.ibm.websphere.ras.annotation.Sensitive;
 import com.ibm.websphere.ras.annotation.Trivial;
 import com.ibm.ws.common.crypto.CryptoUtils;
 
@@ -884,6 +887,104 @@ final class LTPACrypto {
 
         long decryptGCMIVMs = System.currentTimeMillis() - startDecryptGCMIV;
         System.out.println("[LTPACrypto] decryptGCM (AES-256-GCM, caller-supplied IV): end; ciphertext+tag=" + ciphertext.length + " bytes, plaintext=" + result.length + " bytes, took=" + decryptGCMIVMs + " ms");
+        return result;
+    }
+
+    private static final int KDF_SALT_LENGTH = 32;
+    private static final byte[] KDF_INFO = "LTPA2-KDF-AES-GCM-256".getBytes(StandardCharsets.UTF_8);
+
+    /**
+     * Derive a 256-bit AES key from the master shared key and a per-token salt using HKDF (HMAC-SHA256).
+     *
+     * @param masterKey The master LTPA shared key
+     * @param salt      The per-token random salt (32 bytes)
+     * @return 256-bit (32 bytes) derived AES key
+     * @throws Exception if key derivation fails
+     */
+    @Sensitive
+    protected static final byte[] deriveKDFKey(@Sensitive byte[] masterKey, byte[] salt) throws Exception {
+        Mac mac = (provider == null) ? Mac.getInstance("HmacSHA256") : Mac.getInstance("HmacSHA256", provider);
+        // Step 1: HKDF-Extract(salt, masterKey) -> PRK
+        mac.init(new SecretKeySpec(salt, "HmacSHA256"));
+        byte[] prk = mac.doFinal(masterKey);
+
+        // Step 2: HKDF-Expand(PRK, info || 0x01) -> OKM (32 bytes for AES-256)
+        mac.init(new SecretKeySpec(prk, "HmacSHA256"));
+        mac.update(KDF_INFO);
+        mac.update((byte) 0x01);
+        return mac.doFinal();
+    }
+
+    /**
+     * Encrypt data using KDF-derived AES-GCM-256.
+     * Generates a 32-byte salt, derives a per-token 256-bit AES key via HKDF (HMAC-SHA256),
+     * and encrypts using AES-256-GCM with a random 12-byte IV.
+     *
+     * @param data      The plaintext data
+     * @param masterKey The master LTPA shared key
+     * @return [Salt (32 bytes)][IV (12 bytes)][Ciphertext][Auth Tag (16 bytes)]
+     * @throws Exception if encryption fails
+     */
+    @Sensitive
+    protected static final byte[] encryptKDF(byte[] data, @Sensitive byte[] masterKey) throws Exception {
+        long startEncryptKDF = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] encryptKDF (KDF-AES-GCM-256): start; dataLen=" + data.length);
+
+        // Generate random 32-byte salt
+        SecureRandom random = new SecureRandom();
+        byte[] salt = new byte[KDF_SALT_LENGTH];
+        random.nextBytes(salt);
+
+        // Derive per-token AES-256 key
+        byte[] derivedKey = deriveKDFKey(masterKey, salt);
+
+        // Encrypt with AES-GCM using derived key (returns [IV (12B)][Ciphertext + Tag (16B)])
+        byte[] gcmPayload = encryptGCM(data, derivedKey);
+
+        // Assemble: [Salt (32 bytes)][IV (12 bytes)][Ciphertext + Auth Tag]
+        byte[] result = new byte[KDF_SALT_LENGTH + gcmPayload.length];
+        System.arraycopy(salt, 0, result, 0, KDF_SALT_LENGTH);
+        System.arraycopy(gcmPayload, 0, result, KDF_SALT_LENGTH, gcmPayload.length);
+
+        long encryptKDFMs = System.currentTimeMillis() - startEncryptKDF;
+        System.out.println("[LTPACrypto] encryptKDF (KDF-AES-GCM-256): end; plaintext=" + data.length + " bytes, output=" + result.length + " bytes, took=" + encryptKDFMs + " ms");
+        return result;
+    }
+
+    /**
+     * Decrypt data encrypted with KDF-derived AES-GCM-256.
+     * Expects [Salt (32 bytes)][IV (12 bytes)][Ciphertext][Auth Tag (16 bytes)].
+     *
+     * @param encryptedData The encrypted byte payload
+     * @param masterKey     The master LTPA shared key
+     * @return The decrypted plaintext
+     * @throws Exception if decryption fails or authentication tag is invalid
+     */
+    @Sensitive
+    protected static final byte[] decryptKDF(byte[] encryptedData, @Sensitive byte[] masterKey) throws Exception {
+        long startDecryptKDF = System.currentTimeMillis();
+        System.out.println("[LTPACrypto] decryptKDF (KDF-AES-GCM-256): start; encryptedLen=" + encryptedData.length);
+
+        if (encryptedData.length < KDF_SALT_LENGTH + 12 + 16) {
+            throw new IllegalArgumentException("Encrypted token too short for KDF: " + encryptedData.length + " bytes");
+        }
+
+        // Extract 32-byte salt
+        byte[] salt = new byte[KDF_SALT_LENGTH];
+        System.arraycopy(encryptedData, 0, salt, 0, KDF_SALT_LENGTH);
+
+        // Extract [IV (12B)][Ciphertext + Tag (16B)]
+        byte[] gcmPayload = new byte[encryptedData.length - KDF_SALT_LENGTH];
+        System.arraycopy(encryptedData, KDF_SALT_LENGTH, gcmPayload, 0, gcmPayload.length);
+
+        // Derive per-token AES-256 key from masterKey + salt
+        byte[] derivedKey = deriveKDFKey(masterKey, salt);
+
+        // Decrypt with derived key
+        byte[] result = decryptGCM(gcmPayload, derivedKey);
+
+        long decryptKDFMs = System.currentTimeMillis() - startDecryptKDF;
+        System.out.println("[LTPACrypto] decryptKDF (KDF-AES-GCM-256): end; ciphertext=" + encryptedData.length + " bytes, plaintext=" + result.length + " bytes, took=" + decryptKDFMs + " ms");
         return result;
     }
 

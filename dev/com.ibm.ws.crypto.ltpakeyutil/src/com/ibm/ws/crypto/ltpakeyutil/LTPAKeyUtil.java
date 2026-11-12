@@ -83,7 +83,34 @@ public final class LTPAKeyUtil {
                  return LTPACrypto.decryptGCM(encryptedData, key);
         }
 
-	public static byte[] signISO9796(byte[][] key, byte[] data, int off, int len) throws Exception {
+        /**
+         * Encrypts data using KDF-derived AES-GCM-256.
+         * Generates a 32-byte salt, derives a per-token 256-bit AES key, and encrypts using AES-GCM.
+         * Returns [Salt (32 bytes)][IV (12 bytes)][Ciphertext][Auth Tag (16 bytes)].
+         *
+         * @param data The plaintext data
+         * @param key  The master LTPA shared key
+         * @return The encrypted payload including salt, IV, ciphertext, and tag
+         * @throws Exception if encryption fails
+         */
+        public static byte[] encryptKDF(byte[] data, byte[] key) throws Exception {
+                return LTPACrypto.encryptKDF(data, key);
+        }
+
+        /**
+         * Decrypts data encrypted with KDF-derived AES-GCM-256.
+         * Extracts salt, derives the per-token 256-bit AES key, and decrypts using AES-GCM.
+         *
+         * @param encryptedData The encrypted byte payload
+         * @param key           The master LTPA shared key
+         * @return The decrypted plaintext
+         * @throws Exception if decryption fails or authentication tag is invalid
+         */
+        public static byte[] decryptKDF(byte[] encryptedData, byte[] key) throws Exception {
+                return LTPACrypto.decryptKDF(encryptedData, key);
+        }
+
+ public static byte[] signISO9796(byte[][] key, byte[] data, int off, int len) throws Exception {
 		return LTPACrypto.signISO9796(key, data, off, len);
 	}
 
