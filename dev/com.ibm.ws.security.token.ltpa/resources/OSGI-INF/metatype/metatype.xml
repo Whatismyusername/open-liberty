@@ -62,12 +62,18 @@
             <Option label="%signingMode.classical" value="classical"/>
             <Option label="%signingMode.pqc" value="pqc"/>
             <Option label="%signingMode.hybrid" value="hybrid"/>
+            <Option label="%signingMode.symmetric" value="symmetric"/>
             <Option label="%signingMode.none" value="none"/>
         </AD>
         <AD id="classicalSignatureAlgorithm" name="%classicalSignatureAlgorithm" description="%classicalSignatureAlgorithm.desc"
             required="false" type="String">
             <Option label="%classicalSignatureAlgorithm.sha1" value="SHA1withRSA"/>
             <Option label="%classicalSignatureAlgorithm.sha512" value="SHA512withRSA"/>
+        </AD>
+        <AD id="symmetricSignatureAlgorithm" name="%symmetricSignatureAlgorithm" description="%symmetricSignatureAlgorithm.desc"
+            required="false" type="String"
+            default="AES-GCM-256">
+            <Option label="%symmetricSignatureAlgorithm.aes256gcm" value="AES-GCM-256"/>
         </AD>
         <AD id="classicalKeySize" name="%classicalKeySize" description="%classicalKeySize.desc"
             required="false" type="Integer">
@@ -86,7 +92,6 @@
             <Option label="%encryptionAlgorithm.aes128cbc" value="AES-CBC-128"/>
             <Option label="%encryptionAlgorithm.aes256cbc" value="AES-CBC-256"/>
             <Option label="%encryptionAlgorithm.aes256gcm" value="AES-GCM-256"/>
-            <Option label="%encryptionAlgorithm.kdf" value="KDF"/>
             <Option label="%encryptionAlgorithm.none" value="none"/>
         </AD>
         <AD id="hybridVerificationPolicy" name="%hybridVerificationPolicy" description="%hybridVerificationPolicy.desc"

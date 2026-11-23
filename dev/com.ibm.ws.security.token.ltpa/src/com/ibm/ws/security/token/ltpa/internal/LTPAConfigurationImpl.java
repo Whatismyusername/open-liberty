@@ -118,6 +118,7 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
     // All defaults are applied in resolveSigningConfig(), which is called from loadConfig().
     private String signingMode = "classical";
     private String classicalSignatureAlgorithm = null;
+    private String symmetricSignatureAlgorithm = null;
     private int classicalKeySize = 0;
     private String pqcSignatureAlgorithm = null;
     private String encryptionAlgorithm = null;
@@ -195,6 +196,7 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
         String oldTokenVersion = tokenVersion;
         String oldSigningMode = signingMode;
         String oldClassicalSignatureAlgorithm = classicalSignatureAlgorithm;
+        String oldSymmetricSignatureAlgorithm = symmetricSignatureAlgorithm;
         int oldClassicalKeySize = classicalKeySize;
         String oldPqcSignatureAlgorithm = pqcSignatureAlgorithm;
         String oldEncryptionAlgorithm = encryptionAlgorithm;
@@ -208,7 +210,7 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
             loadConfig(props);
 
             if (isKeysConfigChanged(oldKeyImportFile, oldKeyTokenExpiration, oldExpirationDifferenceAllowed, oldMonitorValidationKeysDir, oldUpdateTrigger, oldValidationKeys,
-                                    oldTokenVersion, oldSigningMode, oldClassicalSignatureAlgorithm, oldClassicalKeySize, oldPqcSignatureAlgorithm, oldEncryptionAlgorithm, oldHybridVerificationPolicy)) {
+                                    oldTokenVersion, oldSigningMode, oldClassicalSignatureAlgorithm, oldSymmetricSignatureAlgorithm, oldClassicalKeySize, oldPqcSignatureAlgorithm, oldEncryptionAlgorithm, oldHybridVerificationPolicy)) {
                 unsetFileMonitorRegistration();
                 Tr.audit(tc, "LTPA_KEYS_TO_LOAD", primaryKeyImportFile);
                 setupRuntimeLTPAInfrastructure();
@@ -251,6 +253,14 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
             classicalSignatureAlgorithm = (String) classicalSigAlgObj;
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(tc, "Classical signature algorithm: " + classicalSignatureAlgorithm);
+            }
+        }
+
+        Object symSigAlgObj = props.get(CFG_KEY_SYMMETRIC_SIGNATURE_ALGORITHM);
+        if (symSigAlgObj != null) {
+            symmetricSignatureAlgorithm = (String) symSigAlgObj;
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(tc, "Symmetric signature algorithm: " + symmetricSignatureAlgorithm);
             }
         }
 
@@ -382,6 +392,15 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
                 }
                 break;
 
+            case "symmetric":
+                if (symmetricSignatureAlgorithm == null || symmetricSignatureAlgorithm.isEmpty()) {
+                    symmetricSignatureAlgorithm = "AES-GCM-256";
+                }
+                if (encryptionAlgorithm == null || encryptionAlgorithm.isEmpty()) {
+                    encryptionAlgorithm = "AES-GCM-256";
+                }
+                break;
+
             case "pqc":
                 if (pqcSignatureAlgorithm == null || pqcSignatureAlgorithm.isEmpty()) {
                     pqcSignatureAlgorithm = PQCConstants.ALGORITHM_ML_DSA_65;
@@ -427,10 +446,6 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
                 break;
             case "AES-GCM-256":
                 resolvedCipher = CryptoUtils.AES_GCM_CIPHER;
-                resolvedKeyLength = CryptoUtils.AES_256_KEY_LENGTH_BYTES;
-                break;
-            case "KDF":
-                resolvedCipher = CryptoUtils.KDF_AES_GCM_CIPHER;
                 resolvedKeyLength = CryptoUtils.AES_256_KEY_LENGTH_BYTES;
                 break;
             case "none":
@@ -826,7 +841,8 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
                                         String oldUpdateTrigger,
                                         @Sensitive List<Properties> oldValidationKeys,
                                         String oldTokenVersion, String oldSigningMode,
-                                        String oldClassicalSignatureAlgorithm, int oldClassicalKeySize,
+                                        String oldClassicalSignatureAlgorithm, String oldSymmetricSignatureAlgorithm,
+                                        int oldClassicalKeySize,
                                         String oldPqcSignatureAlgorithm, String oldEncryptionAlgorithm,
                                         String oldHybridVerificationPolicy) {
         return ((oldKeyImportFile.equals(primaryKeyImportFile) == false)
@@ -837,6 +853,7 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
                 || (oldTokenVersion != tokenVersion)
                 || (oldSigningMode != signingMode)
                 || (oldClassicalSignatureAlgorithm != classicalSignatureAlgorithm)
+                || (oldSymmetricSignatureAlgorithm != symmetricSignatureAlgorithm)
                 || (oldClassicalKeySize != classicalKeySize)
                 || (oldPqcSignatureAlgorithm != pqcSignatureAlgorithm)
                 || (oldEncryptionAlgorithm != encryptionAlgorithm)
@@ -1050,6 +1067,11 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
     @Override
     public String getPqcSignatureAlgorithm() {
         return pqcSignatureAlgorithm;
+    }
+
+    @Override
+    public String getSymmetricSignatureAlgorithm() {
+        return symmetricSignatureAlgorithm;
     }
 
     @Override

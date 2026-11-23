@@ -41,9 +41,15 @@ public final class LTPATokenHeader {
     public static final byte SIG_ALG_ML_DSA = (byte) 0x03;
     public static final byte SIG_ALG_HYBRID_SHA1_RSA_ML_DSA = (byte) 0x04;
     public static final byte SIG_ALG_HYBRID_SHA512_RSA_ML_DSA = (byte) 0x05;
+    public static final byte SIG_ALG_AES_GCM_256 = (byte) 0x06;
 
     public static final String SIG_ALG_NAME_HYBRID_SHA1_RSA_ML_DSA = "HYBRID-SHA1withRSA-ML-DSA";
     public static final String SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA = "HYBRID-SHA512withRSA-ML-DSA";
+    public static final String SIG_ALG_NAME_AES_GCM_256 = "AES-GCM-256";
+
+    public static final String ENC_ALG_NAME_AES_CBC_128 = "AES-CBC-128";
+    public static final String ENC_ALG_NAME_AES_CBC_256 = "AES-CBC-256";
+    public static final String ENC_ALG_NAME_AES_GCM_256 = "AES-GCM-256";
 
     public static final byte ENC_ALG_NONE = (byte) 0x00;
     public static final byte ENC_ALG_AES_CBC_128 = (byte) 0x01;
@@ -81,6 +87,9 @@ public final class LTPATokenHeader {
         }
         if ("pqc".equals(signingMode)) {
             return SIG_ALG_ML_DSA; // maybe look at specifying mldsa variant?
+        }
+        if ("symmetric".equals(signingMode)) {
+            return SIG_ALG_AES_GCM_256;
         }
         if ("hybrid".equals(signingMode)) {
             if (CryptoUtils.SIGNATURE_ALGORITHM_SHA512WITHRSA.equals(classicalSigAlg)) {
@@ -146,6 +155,7 @@ public final class LTPATokenHeader {
             case SIG_ALG_ML_DSA: return "ML-DSA";
             case SIG_ALG_HYBRID_SHA1_RSA_ML_DSA: return SIG_ALG_NAME_HYBRID_SHA1_RSA_ML_DSA;
             case SIG_ALG_HYBRID_SHA512_RSA_ML_DSA: return SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA;
+            case SIG_ALG_AES_GCM_256: return SIG_ALG_NAME_AES_GCM_256;
             default:
                 throw new InvalidTokenException("Unknown SigAlg byte in token header: 0x"
                         + Integer.toHexString(sigAlgByte & 0xFF));
@@ -164,6 +174,20 @@ public final class LTPATokenHeader {
      */
     public static boolean isHybridSigAlg(String sigAlg) {
         return SIG_ALG_NAME_HYBRID_SHA1_RSA_ML_DSA.equals(sigAlg) || SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA.equals(sigAlg);
+    }
+
+    /**
+     * Checks if the given SigAlg header byte represents a symmetric (shared-key) signature algorithm.
+     */
+    public static boolean isSymmetricSigAlg(byte sigAlgByte) {
+        return sigAlgByte == SIG_ALG_AES_GCM_256;
+    }
+
+    /**
+     * Checks if the given decoded signature algorithm string represents a symmetric (shared-key) signature algorithm.
+     */
+    public static boolean isSymmetricSigAlg(String sigAlg) {
+        return SIG_ALG_NAME_AES_GCM_256.equals(sigAlg);
     }
 
     /**
@@ -214,5 +238,54 @@ public final class LTPATokenHeader {
                 throw new InvalidTokenException("Unknown EncAlg byte in token header: 0x"
                         + Integer.toHexString(encAlgByte & 0xFF));
         }
+    }
+
+    /**
+     * Resolves the canonical encryption algorithm name from an {@code EncAlg} header byte.
+     *
+     * @param encAlgByte the EncAlg byte read from the token header
+     * @return the canonical name (e.g. "AES-GCM-256", "AES-CBC-128", "AES-CBC-256"), or null if none
+     * @throws InvalidTokenException if the byte value is unknown
+     */
+    public static String decodeCanonicalEncAlg(byte encAlgByte) throws InvalidTokenException {
+        switch (encAlgByte) {
+            case ENC_ALG_NONE: return null;
+            case ENC_ALG_KDF_AES_GCM_256: return "KDF";
+            case ENC_ALG_AES_CBC_128: return ENC_ALG_NAME_AES_CBC_128;
+            case ENC_ALG_AES_CBC_256: return ENC_ALG_NAME_AES_CBC_256;
+            case ENC_ALG_AES_GCM_256: return ENC_ALG_NAME_AES_GCM_256;
+            default:
+                throw new InvalidTokenException("Unknown EncAlg byte in token header: 0x"
+                        + Integer.toHexString(encAlgByte & 0xFF));
+        }
+    }
+
+    /**
+     * Converts a JCA cipher transformation string and key length to a canonical encryption algorithm name.
+     *
+     * @param resolvedCipher    JCA cipher string (e.g. "AES/GCM/NoPadding", "AES/CBC/PKCS5Padding"), or canonical name, or null
+     * @param resolvedKeyLength Key length in bytes (16, 32, or 0 for default)
+     * @return canonical name ("AES-GCM-256", "AES-CBC-128", "AES-CBC-256", "KDF"), or null
+     */
+    public static String toCanonicalEncAlg(String resolvedCipher, int resolvedKeyLength) {
+        if (resolvedCipher == null) {
+            return null;
+        }
+        if (CryptoUtils.AES_GCM_CIPHER.equals(resolvedCipher) || ENC_ALG_NAME_AES_GCM_256.equals(resolvedCipher)) {
+            return ENC_ALG_NAME_AES_GCM_256;
+        }
+        if (CryptoUtils.KDF_AES_GCM_CIPHER.equals(resolvedCipher) || "KDF".equals(resolvedCipher)) {
+            return "KDF";
+        }
+        int keyLen = (resolvedKeyLength > 0) ? resolvedKeyLength
+                   : (CryptoUtils.isFips140_3Enabled() ? CryptoUtils.AES_256_KEY_LENGTH_BYTES
+                                                        : CryptoUtils.AES_128_KEY_LENGTH_BYTES);
+        if (keyLen == CryptoUtils.AES_128_KEY_LENGTH_BYTES) {
+            return ENC_ALG_NAME_AES_CBC_128;
+        }
+        if (keyLen == CryptoUtils.AES_256_KEY_LENGTH_BYTES) {
+            return ENC_ALG_NAME_AES_CBC_256;
+        }
+        return resolvedCipher;
     }
 }

@@ -29,7 +29,7 @@ import com.ibm.ws.crypto.ltpakeyutil.LTPAPrivateKey;
 import com.ibm.ws.crypto.ltpakeyutil.LTPAPublicKey;
 import com.ibm.ws.security.token.ltpa.LTPAKeyInfoManager;
 
-import test.UTLocationHelper;
+import com.ibm.ws.security.token.ltpa.LTPAKeyInfoManagerTestUtil;
 
 /**
  * Ensure LTPAToken2 remains serializable. This is necessary because
@@ -155,9 +155,7 @@ public class LTPAToken2SerializationTest {
         final String filename = "test-resources/test data/ser-files/LTPAToken2_x.ser";
 
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          KEYIMPORTFILE,
-                                          KEYPASSWORD, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, KEYIMPORTFILE, KEYPASSWORD, null, false);
         ltpaPrivateKey = new LTPAPrivateKey(keyInfoManager.getPrivateKey(KEYIMPORTFILE));
         ltpaPublicKey = new LTPAPublicKey(keyInfoManager.getPublicKey(KEYIMPORTFILE));
         sharedKey = encodedSharedKey.getBytes();

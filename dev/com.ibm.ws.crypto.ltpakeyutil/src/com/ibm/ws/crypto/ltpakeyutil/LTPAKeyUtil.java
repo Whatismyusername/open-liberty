@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2024 IBM Corporation and others.
+ * Copyright (c) 2016, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -108,6 +108,58 @@ public final class LTPAKeyUtil {
          */
         public static byte[] decryptKDF(byte[] encryptedData, byte[] key) throws Exception {
                 return LTPACrypto.decryptKDF(encryptedData, key);
+        }
+
+        /**
+         * Derives a signing key from the master shared key using HKDF (HMAC-SHA256).
+         *
+         * @param masterKey The master LTPA shared key
+         * @param sigAlg    The signature algorithm name (e.g. "AES-GCM-256")
+         * @return 256-bit (32 bytes) derived signing key
+         * @throws Exception if key derivation fails
+         */
+        public static byte[] deriveSigningKey(byte[] masterKey, String sigAlg) throws Exception {
+                return LTPACrypto.deriveSigningKey(masterKey, sigAlg);
+        }
+
+        /**
+         * Derives an encryption key from the master shared key using HKDF (HMAC-SHA256).
+         *
+         * @param masterKey      The master LTPA shared key
+         * @param cipher         The cipher string or algorithm name (e.g. "AES-GCM-256", "AES-CBC-128", "AES-CBC-256")
+         * @param keyLengthBytes Desired key length in bytes (16 or 32)
+         * @return Derived encryption key
+         * @throws Exception if key derivation fails
+         */
+        public static byte[] deriveEncryptionKey(byte[] masterKey, String cipher, int keyLengthBytes) throws Exception {
+                return LTPACrypto.deriveEncryptionKey(masterKey, cipher, keyLengthBytes);
+        }
+
+        /**
+         * Sign data using AES-GCM-256 (GMAC).
+         * Computes a 128-bit (16-byte) authentication tag over {@code data} with a fresh 12-byte IV.
+         * Output format: [IV (12 bytes)][Auth Tag (16 bytes)] (28 bytes total).
+         *
+         * @param data The data to sign
+         * @param key  The derived 256-bit signing key
+         * @return 28-byte signature
+         * @throws Exception if signing fails
+         */
+        public static byte[] signGCM(byte[] data, byte[] key) throws Exception {
+                return LTPACrypto.signGCM(data, key);
+        }
+
+        /**
+         * Verify a signature using AES-GCM-256 (GMAC).
+         * Expects [IV (12 bytes)][Auth Tag (16 bytes)] (28 bytes total).
+         *
+         * @param data      The data that was signed
+         * @param signature The 28-byte signature (IV + Tag)
+         * @param key       The derived 256-bit signing key
+         * @return true if valid, false if signature is invalid or tampered
+         */
+        public static boolean verifyGCM(byte[] data, byte[] signature, byte[] key) {
+                return LTPACrypto.verifyGCM(data, signature, key);
         }
 
  public static byte[] signISO9796(byte[][] key, byte[] data, int off, int len) throws Exception {

@@ -24,68 +24,25 @@ import com.ibm.wsspi.kernel.service.location.WsLocationAdmin;
 public interface LTPAKeyFileCreator extends LTPAKeyFileUtility {
 
     /**
-     * Create the LTPA keys file at the specified location using
-     * the specified password bytes.
+     * Create the LTPA keys file at the specified location with newly generated keys.
      * <p>
      * Access the keyFile using the WsLocationAdmin
      *
      * @param locService
      * @param keyFile
      * @param keyPasswordBytes
-     * @return A Properties object containing the various attributes created for the LTPA keys
-     * @throws Exception
-     */
-    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes) throws Exception;
-
-    /**
-     * Create the LTPA keys file at the specified location using the specified
-     * password bytes and classical RSA key size.
-     * <p>
-     * Version is determined by RSA key size: RSA-2048 ({@code classicalKeySize=256}) → v2.0;
-     * RSA-1024 ({@code classicalKeySize=128}) → v1.0.
-     *
-     * @param locService
-     * @param keyFile
-     * @param keyPasswordBytes
+     * @param signingMode      signing mode ("classical", "pqc", "hybrid", "symmetric", "none")
+     * @param mldsaAlgorithm   ML-DSA algorithm for PQC/hybrid mode, or null
      * @param classicalKeySize RSA key size in bytes (128=RSA-1024, 256=RSA-2048); 0 uses default
      * @return A Properties object containing the various attributes created for the LTPA keys
      * @throws Exception
      */
-    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes, int classicalKeySize) throws Exception;
+    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes,
+                                         String signingMode, String mldsaAlgorithm, int classicalKeySize) throws Exception;
 
     /**
-     * Create the LTPA keys file at the specified location using the specified
-     * password bytes and ML-DSA algorithm (PQC mode).
-     * <p>
-     * RSA keys are always generated alongside the ML-DSA keys using the FIPS-aware
-     * default key size.
-     *
-     * @param locService
-     * @param keyFile
-     * @param keyPasswordBytes
-     * @param mldsaAlgorithm
-     * @return A Properties object containing the various attributes created for the LTPA keys
-     * @throws Exception
-     */
-    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes, String mldsaAlgorithm) throws Exception;
-
-    /**
-     * Create the LTPA keys file at the specified location using the specified
-     * password bytes, ML-DSA algorithm, and classical RSA key size (Hybrid mode).
-     *
-     * @param locService
-     * @param keyFile
-     * @param keyPasswordBytes
-     * @param mldsaAlgorithm
-     * @param classicalKeySize RSA key size in bytes (128=RSA-1024, 256=RSA-2048)
-     * @return A Properties object containing the various attributes created for the LTPA keys
-     * @throws Exception
-     */
-    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes, String mldsaAlgorithm, int classicalKeySize) throws Exception;
-
-    /**
-     * Create the LTPA keys file at the specified location using
-     * the specified password bytes, shared key bytes, private key bytes, and public key bytes.
+     * Create the LTPA keys file at the specified location by re-encrypting existing
+     * classical (shared key + RSA) keys with the specified password bytes.
      * <p>
      * Access the keyFile using the WsLocationAdmin
      *

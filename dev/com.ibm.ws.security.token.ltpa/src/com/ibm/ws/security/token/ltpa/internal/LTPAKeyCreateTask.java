@@ -83,6 +83,7 @@ class LTPAKeyCreateTask implements Runnable {
         tokenFactoryMap.put("keyInfoManager", keyInfoManager);
         tokenFactoryMap.put(LTPAConstants.CONFIGURED_SIGNING_MODE, signingMode);
         tokenFactoryMap.put(LTPAConstants.CONFIGURED_CLASSICAL_SIG_ALG, config.getClassicalSignatureAlgorithm());
+        tokenFactoryMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, config.getSymmetricSignatureAlgorithm());
         tokenFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_CIPHER, config.getResolvedCipher());
         tokenFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH, config.getResolvedKeyLength());
         tokenFactoryMap.put(LTPAConstants.CONFIGURED_HYBRID_VERIFY_POLICY, config.getHybridVerificationPolicy());
@@ -108,6 +109,8 @@ class LTPAKeyCreateTask implements Runnable {
             byte[] mldsaPublicKey  = keyInfoManager.getMLDSAPublicKey(primaryKeyFile);
             tokenFactoryMap.put(LTPAConstants.PRIMARY_MLDSA_PRIVATE_KEY, mldsaPrivateKey);
             tokenFactoryMap.put(LTPAConstants.PRIMARY_MLDSA_PUBLIC_KEY, mldsaPublicKey);
+        } else if ("symmetric".equals(signingMode)) {
+            // Symmetric mode — Master Shared Key only, no asymmetric keys needed.
         } else {
             // Classical mode — RSA keys only.
             byte[] privKeyBytes = keyInfoManager.getPrivateKey(primaryKeyFile);

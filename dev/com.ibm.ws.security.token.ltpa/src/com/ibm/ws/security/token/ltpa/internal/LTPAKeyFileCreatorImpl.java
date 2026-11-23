@@ -89,46 +89,24 @@ public class LTPAKeyFileCreatorImpl extends LTPAKeyFileUtilityImpl implements LT
 
     /** {@inheritDoc} */
     @Override
-    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes) throws Exception {
-        String realmName = isUserRegistryAvailable()?getRealmName():"defaultRealm";
-        Properties ltpaProps = generateLTPAKeys(keyPasswordBytes, realmName);
-        addLTPAKeysToFile(getOutputStream(locService, keyFile), ltpaProps);
-        return ltpaProps;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes, int classicalKeySize) throws Exception {
-        String realmName = isUserRegistryAvailable() ? getRealmName() : "defaultRealm";
-        Properties ltpaProps = generateLTPAKeys(keyPasswordBytes, null, null, null, realmName, null, classicalKeySize);
-        addLTPAKeysToFile(getOutputStream(locService, keyFile), ltpaProps);
-        return ltpaProps;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes, String mldsaAlgorithm) throws Exception {
-        String realmName = isUserRegistryAvailable() ? getRealmName() : "defaultRealm";
-        Properties ltpaProps = generateLTPAKeys(keyPasswordBytes, null, null, null, realmName, mldsaAlgorithm, 0);
-        addLTPAKeysToFile(getOutputStream(locService, keyFile), ltpaProps);
-        return ltpaProps;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes, String mldsaAlgorithm, int classicalKeySize) throws Exception {
-        String realmName = isUserRegistryAvailable() ? getRealmName() : "defaultRealm";
-        Properties ltpaProps = generateLTPAKeys(keyPasswordBytes, null, null, null, realmName, mldsaAlgorithm, classicalKeySize);
-        addLTPAKeysToFile(getOutputStream(locService, keyFile), ltpaProps);
-        return ltpaProps;
+    public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes,
+                                         String signingMode, String mldsaAlgorithm, int classicalKeySize) throws Exception {
+        return generateAndWriteKeysFile(locService, keyFile, keyPasswordBytes, null, null, null, signingMode, mldsaAlgorithm, classicalKeySize);
     }
 
     /** {@inheritDoc} */
     @Override
     public Properties createLTPAKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes,
                                          @Sensitive byte[] sharedKeyBytes, @Sensitive byte[] privateKeyBytes, @Sensitive byte[] publicKeyBytes) throws Exception {
+        return generateAndWriteKeysFile(locService, keyFile, keyPasswordBytes, sharedKeyBytes, privateKeyBytes, publicKeyBytes, "classical", null, 0);
+    }
+
+    private Properties generateAndWriteKeysFile(WsLocationAdmin locService, String keyFile, @Sensitive byte[] keyPasswordBytes,
+                                                @Sensitive byte[] sharedKeyBytes, @Sensitive byte[] privateKeyBytes, @Sensitive byte[] publicKeyBytes,
+                                                String signingMode, String mldsaAlgorithm, int classicalKeySize) throws Exception {
         String realmName = isUserRegistryAvailable() ? getRealmName() : "defaultRealm";
-        Properties ltpaProps = generateLTPAKeys(keyPasswordBytes, sharedKeyBytes, privateKeyBytes, publicKeyBytes, realmName);
+        Properties ltpaProps = generateLTPAKeys(keyPasswordBytes, sharedKeyBytes, privateKeyBytes, publicKeyBytes, realmName,
+                                                signingMode, mldsaAlgorithm, classicalKeySize);
         addLTPAKeysToFile(getOutputStream(locService, keyFile), ltpaProps);
         return ltpaProps;
     }

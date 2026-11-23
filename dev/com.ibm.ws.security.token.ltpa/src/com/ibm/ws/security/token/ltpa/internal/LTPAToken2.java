@@ -75,6 +75,11 @@ public class LTPAToken2 implements Token, Serializable {
     private final String resolvedCipher;
     private final int resolvedKeyLength;
     private final String hybridVerificationPolicy;
+    @Sensitive
+    private final byte[] cachedEncKey;
+    private final String cachedEncCipher;
+    @Sensitive
+    private final byte[] cachedSigKey;
     private boolean hasHeader = false;
     private String sigAlgForVerify = null;
     private String headerCipher = null;
@@ -105,22 +110,36 @@ public class LTPAToken2 implements Token, Serializable {
      */
      public LTPAToken2(byte[] tokenBytes, @Sensitive byte[] sharedKey, LTPAPrivateKey privateKey, LTPAPublicKey publicKey, long expDiffAllowed,
                         String... attributes) throws InvalidTokenException, TokenExpiredException {
-        this(tokenBytes, sharedKey, privateKey, publicKey, null, null, PQCConstants.CRYPTO_MODE_CLASSICAL, "both", expDiffAllowed, attributes);
+        this(tokenBytes, sharedKey, privateKey, publicKey, null, null, PQCConstants.CRYPTO_MODE_CLASSICAL, "both", expDiffAllowed, null, null, null, attributes);
      }
+
+    public LTPAToken2(byte[] tokenBytes, @Sensitive byte[] sharedKey, LTPAPrivateKey privateKey, LTPAPublicKey publicKey,
+                      long expDiffAllowed, @Sensitive byte[] cachedEncKey, String cachedEncCipher, @Sensitive byte[] cachedSigKey,
+                      String... attributes) throws InvalidTokenException, TokenExpiredException {
+        this(tokenBytes, sharedKey, privateKey, publicKey, null, null, PQCConstants.CRYPTO_MODE_CLASSICAL, "both", expDiffAllowed,
+             cachedEncKey, cachedEncCipher, cachedSigKey, attributes);
+    }
 
     public LTPAToken2(byte[] tokenBytes, @Sensitive byte[] sharedKey, LTPAPrivateKey privateKey, LTPAPublicKey publicKey,
                       PrivateKey mldsaPrivateKey, PublicKey mldsaPublicKey, String signingMode, long expDiffAllowed,
                       String... attributes) throws InvalidTokenException, TokenExpiredException {
-        this(tokenBytes, sharedKey, privateKey, publicKey, mldsaPrivateKey, mldsaPublicKey, signingMode, "both", expDiffAllowed, attributes);
+        this(tokenBytes, sharedKey, privateKey, publicKey, mldsaPrivateKey, mldsaPublicKey, signingMode, "both", expDiffAllowed, null, null, null, attributes);
     }
 
     public LTPAToken2(byte[] tokenBytes, @Sensitive byte[] sharedKey, LTPAPrivateKey privateKey, LTPAPublicKey publicKey,
                       PrivateKey mldsaPrivateKey, PublicKey mldsaPublicKey, String signingMode, String hybridVerificationPolicy,
                       long expDiffAllowed, String... attributes) throws InvalidTokenException, TokenExpiredException {
+        this(tokenBytes, sharedKey, privateKey, publicKey, mldsaPrivateKey, mldsaPublicKey, signingMode, hybridVerificationPolicy, expDiffAllowed, null, null, null, attributes);
+    }
+
+    public LTPAToken2(byte[] tokenBytes, @Sensitive byte[] sharedKey, LTPAPrivateKey privateKey, LTPAPublicKey publicKey,
+                      PrivateKey mldsaPrivateKey, PublicKey mldsaPublicKey, String signingMode, String hybridVerificationPolicy,
+                      long expDiffAllowed, @Sensitive byte[] cachedEncKey, String cachedEncCipher, @Sensitive byte[] cachedSigKey,
+                      String... attributes) throws InvalidTokenException, TokenExpiredException {
         checkTokenBytes(tokenBytes);
         this.signature = null;
         this.encryptedBytes = tokenBytes.clone();
-        this.sharedKey = sharedKey.clone();
+        this.sharedKey = (sharedKey != null) ? sharedKey.clone() : null;
         this.privateKey = privateKey;
         this.publicKey = publicKey;
         this.mldsaPrivateKey = mldsaPrivateKey;
@@ -130,6 +149,9 @@ public class LTPAToken2 implements Token, Serializable {
         this.resolvedCipher = null;  // not used on validation path
         this.resolvedKeyLength = 0;  // not used on validation path
         this.hybridVerificationPolicy = (hybridVerificationPolicy != null) ? hybridVerificationPolicy : "both";
+        this.cachedEncKey = (cachedEncKey != null) ? cachedEncKey.clone() : null;
+        this.cachedEncCipher = cachedEncCipher;
+        this.cachedSigKey = (cachedSigKey != null) ? cachedSigKey.clone() : null;
         this.expirationInMilliseconds = 0;
         this.expirationDifferenceAllowed = expDiffAllowed;
         extractTokenHeader();
@@ -167,9 +189,18 @@ public class LTPAToken2 implements Token, Serializable {
                          LTPAPrivateKey privateKey, LTPAPublicKey publicKey,
                          PrivateKey mldsaPrivateKey, PublicKey mldsaPublicKey, String signingMode, String classicalSigAlg,
                          String resolvedCipher, int resolvedKeyLength) {
+        this(accessID, expirationInMinutes, sharedKey, privateKey, publicKey, mldsaPrivateKey, mldsaPublicKey,
+             signingMode, classicalSigAlg, resolvedCipher, resolvedKeyLength, null, null, null);
+    }
+
+    protected LTPAToken2(String accessID, long expirationInMinutes, @Sensitive byte[] sharedKey,
+                         LTPAPrivateKey privateKey, LTPAPublicKey publicKey,
+                         PrivateKey mldsaPrivateKey, PublicKey mldsaPublicKey, String signingMode, String classicalSigAlg,
+                         String resolvedCipher, int resolvedKeyLength,
+                         @Sensitive byte[] cachedEncKey, String cachedEncCipher, @Sensitive byte[] cachedSigKey) {
         this.signature = null;
         this.encryptedBytes = null;
-        this.sharedKey = sharedKey.clone();
+        this.sharedKey = (sharedKey != null) ? sharedKey.clone() : null;
         this.privateKey = privateKey;
         this.publicKey = publicKey;
         this.mldsaPrivateKey = mldsaPrivateKey;
@@ -179,6 +210,9 @@ public class LTPAToken2 implements Token, Serializable {
         this.resolvedCipher = resolvedCipher;
         this.resolvedKeyLength = resolvedKeyLength;
         this.hybridVerificationPolicy = "both";
+        this.cachedEncKey = (cachedEncKey != null) ? cachedEncKey.clone() : null;
+        this.cachedEncCipher = cachedEncCipher;
+        this.cachedSigKey = (cachedSigKey != null) ? cachedSigKey.clone() : null;
         this.userData = new UserData(accessID);
         setExpiration(expirationInMinutes);
     }
@@ -205,6 +239,9 @@ public class LTPAToken2 implements Token, Serializable {
         this.resolvedCipher = null;
         this.resolvedKeyLength = 0;
         this.hybridVerificationPolicy = "both";
+        this.cachedEncKey = null;
+        this.cachedEncCipher = null;
+        this.cachedSigKey = null;
         this.userData = userdata;
         setExpiration(expirationInMinutes);
     }
@@ -246,15 +283,28 @@ public class LTPAToken2 implements Token, Serializable {
         long startCipher = System.currentTimeMillis();
         byte[] ciphertext;
         try {
+            // Symmetric mode derives a separate encryption key from the shared key via HKDF
+            // (the KDF cipher does its own per-token derivation, so it is excluded).
+            String canonicalCipher = LTPATokenHeader.toCanonicalEncAlg(resolvedCipher, resolvedKeyLength);
+            byte[] encKey;
+            if ("symmetric".equals(signingMode) && resolvedCipher != null && !CryptoUtils.KDF_AES_GCM_CIPHER.equals(resolvedCipher)) {
+                if (cachedEncKey != null && canonicalCipher != null && canonicalCipher.equals(cachedEncCipher)) {
+                    encKey = cachedEncKey;
+                } else {
+                    encKey = LTPAKeyUtil.deriveEncryptionKey(sharedKey, canonicalCipher, resolvedKeyLength);
+                }
+            } else {
+                encKey = sharedKey;
+            }
             if (resolvedCipher == null) {
                 ciphertext = toBeEnc;
             } else if (CryptoUtils.KDF_AES_GCM_CIPHER.equals(resolvedCipher)) {
                 ciphertext = LTPAKeyUtil.encryptKDF(toBeEnc, sharedKey);
             } else if (CryptoUtils.AES_GCM_CIPHER.equals(resolvedCipher)) {
-                ciphertext = LTPAKeyUtil.encryptGCM(toBeEnc, sharedKey);
+                ciphertext = LTPAKeyUtil.encryptGCM(toBeEnc, encKey);
             } else {
                 // resolvedCipher is AES/CBC/PKCS5Padding; resolvedKeyLength is 16 or 32 (0 = FIPS-aware default)
-                ciphertext = LTPAKeyUtil.encrypt(toBeEnc, sharedKey, resolvedCipher, resolvedKeyLength);
+                ciphertext = LTPAKeyUtil.encrypt(toBeEnc, encKey, resolvedCipher, resolvedKeyLength);
             }
         } catch (Exception e) {
             if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
@@ -345,14 +395,26 @@ public class LTPAToken2 implements Token, Serializable {
                 }
 
                 long startCipher = System.currentTimeMillis();
+                // The header, not the local config, decides whether the key was HKDF-derived.
+                String canonicalHeaderCipher = LTPATokenHeader.decodeCanonicalEncAlg(encryptedBytes[6]);
+                byte[] encKey;
+                if (LTPATokenHeader.isSymmetricSigAlg(sigAlgForVerify) && headerCipher != null && !CryptoUtils.KDF_AES_GCM_CIPHER.equals(headerCipher)) {
+                    if (cachedEncKey != null && canonicalHeaderCipher != null && canonicalHeaderCipher.equals(cachedEncCipher)) {
+                        encKey = cachedEncKey;
+                    } else {
+                        encKey = LTPAKeyUtil.deriveEncryptionKey(sharedKey, canonicalHeaderCipher, headerKeyLen);
+                    }
+                } else {
+                    encKey = sharedKey;
+                }
                 if (headerCipher == null) {
                     tokenData = ciphertext;
                 } else if (CryptoUtils.KDF_AES_GCM_CIPHER.equals(headerCipher)) {
                     tokenData = LTPAKeyUtil.decryptKDF(ciphertext, sharedKey);
                 } else if (CryptoUtils.AES_GCM_CIPHER.equals(headerCipher)) {
-                    tokenData = LTPAKeyUtil.decryptGCM(ciphertext, sharedKey);
+                    tokenData = LTPAKeyUtil.decryptGCM(ciphertext, encKey);
                 } else {
-                    tokenData = LTPAKeyUtil.decrypt(ciphertext, sharedKey, headerCipher, headerKeyLen);
+                    tokenData = LTPAKeyUtil.decrypt(ciphertext, encKey, headerCipher, headerKeyLen);
                 }
                 long cipherMs = System.currentTimeMillis() - startCipher;
                 System.out.println("[LTPAToken2] decrypt: cipher (" + headerCipher + ", keyLen=" + headerKeyLen + ") took " + cipherMs + " ms"
@@ -469,6 +531,8 @@ public class LTPAToken2 implements Token, Serializable {
         } else if ("hybrid".equals(signingMode)) {
             effectiveSigAlg = "HYBRID (" + (classicalSigAlg != null ? classicalSigAlg : signatureAlgorithmLabel())
                     + " + " + (mldsaPrivateKey != null ? mldsaPrivateKey.getAlgorithm() : "ML-DSA") + ")";
+        } else if ("symmetric".equals(signingMode)) {
+            effectiveSigAlg = LTPATokenHeader.SIG_ALG_NAME_AES_GCM_256;
         } else {
             effectiveSigAlg = (classicalSigAlg != null ? classicalSigAlg : signatureAlgorithmLabel());
         }
@@ -485,6 +549,11 @@ public class LTPAToken2 implements Token, Serializable {
             byte[] rsaSig = sign(data, this.privateKey);
             byte[] mldsaSig = PQCSignatureHelper.signMLDSA(data, mldsaPrivateKey, null);
             signature = PQCSignatureHelper.combineSignatures(rsaSig, mldsaSig);
+        } else if ("symmetric".equals(signingMode)) {
+            byte[] sigKey = (cachedSigKey != null)
+                ? cachedSigKey
+                : LTPAKeyUtil.deriveSigningKey(this.sharedKey, LTPATokenHeader.SIG_ALG_NAME_AES_GCM_256);
+            signature = LTPAKeyUtil.signGCM(data, sigKey);
         } else {
             signature = sign(data, this.privateKey);
         }
@@ -533,6 +602,11 @@ public class LTPAToken2 implements Token, Serializable {
         boolean result;
         if ("none".equals(sigAlgForVerify)) {
             result = true;
+        } else if (LTPATokenHeader.isSymmetricSigAlg(sigAlgForVerify)) {
+            byte[] sigKey = (cachedSigKey != null && LTPATokenHeader.SIG_ALG_NAME_AES_GCM_256.equals(sigAlgForVerify))
+                ? cachedSigKey
+                : LTPAKeyUtil.deriveSigningKey(this.sharedKey, sigAlgForVerify);
+            result = LTPAKeyUtil.verifyGCM(data, signature, sigKey);
         } else if ("ML-DSA".equals(sigAlgForVerify)) {
             result = PQCSignatureHelper.verifyMLDSA(data, signature, mldsaPublicKey, null);
         } else if (LTPATokenHeader.isHybridSigAlg(sigAlgForVerify)) {

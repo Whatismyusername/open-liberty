@@ -71,9 +71,7 @@ public class LTPAKeyInfoManagerTest {
         WsResource ltpaFile = locAdmin.resolveResource(ltpaKeyFile);
         ltpaFile.delete();
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          ltpaKeyFile,
-                                          KEYPASSWORD_CORRECT, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, ltpaKeyFile, KEYPASSWORD_CORRECT, null, false);
 
         assertTrue("Expected CWWKS4103I message was not logged",
                    outputMgr.checkForMessages("CWWKS4103I:"));
@@ -85,9 +83,7 @@ public class LTPAKeyInfoManagerTest {
     @Test
     public void testNoExist() throws Exception {
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          KEYIMPORTFILE_GETS_CREATED,
-                                          KEYPASSWORD_CORRECT, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, KEYIMPORTFILE_GETS_CREATED, KEYPASSWORD_CORRECT, null, false);
         Assert.assertNotNull("Resource does not get created",
                              keyInfoManager.getLTPAKeyFileResource(UTLocationHelper.getLocationManager(),
                                                                    KEYIMPORTFILE_GETS_CREATED));
@@ -97,9 +93,7 @@ public class LTPAKeyInfoManagerTest {
     public void testIncorrectPrivateKey() throws Exception {
         try {
             LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-            keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                              KEYIMPORTFILE_INCORRECT_PRIVATEKEY,
-                                              KEYPASSWORD_CORRECT, null, false);
+            LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, KEYIMPORTFILE_INCORRECT_PRIVATEKEY, KEYPASSWORD_CORRECT, null, false);
         } catch (IllegalArgumentException e) {
             // Expected
         }
@@ -109,9 +103,7 @@ public class LTPAKeyInfoManagerTest {
     public void testIncorrectKeyPassword() throws Exception {
         try {
             LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-            keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                              LTPA_KEY_IMPORT_FILE,
-                                              KEYPASSWORD_INCORRECT, null, false);
+            LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, LTPA_KEY_IMPORT_FILE, KEYPASSWORD_INCORRECT, null, false);
         } catch (BadPaddingException e) {
             // Expected
         }
@@ -121,9 +113,7 @@ public class LTPAKeyInfoManagerTest {
     public void testNoSecretKey() throws Exception {
         try {
             LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-            keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                              KEYIMPORTFILE_NO_SECRETKEY,
-                                              KEYPASSWORD_CORRECT, null, false);
+            LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, KEYIMPORTFILE_NO_SECRETKEY, KEYPASSWORD_CORRECT, null, false);
         } catch (IllegalArgumentException e) {
             String expectedMessage = "CWWKS4102E: The system cannot create the LTPA token because the required " + LTPAKeyFileUtility.KEYIMPORT_SECRETKEY + " property is missing.";
             String actualMessage = e.getMessage();
@@ -139,9 +129,7 @@ public class LTPAKeyInfoManagerTest {
     public void testNoPrivateKey() throws Exception {
         try {
             LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-            keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                              KEYIMPORTFILE_NO_PRIVATEKEY,
-                                              KEYPASSWORD_CORRECT, null, false);
+            LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, KEYIMPORTFILE_NO_PRIVATEKEY, KEYPASSWORD_CORRECT, null, false);
         } catch (IllegalArgumentException e) {
             String expectedMessage = "CWWKS4102E: The system cannot create the LTPA token because the required " + LTPAKeyFileUtility.KEYIMPORT_PRIVATEKEY
                                      + " property is missing.";
@@ -158,9 +146,7 @@ public class LTPAKeyInfoManagerTest {
     public void testNoPublicKey() throws Exception {
         try {
             LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-            keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                              KEYIMPORTFILE_NO_PUBLICKEY,
-                                              KEYPASSWORD_CORRECT, null, false);
+            LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, KEYIMPORTFILE_NO_PUBLICKEY, KEYPASSWORD_CORRECT, null, false);
         } catch (IllegalArgumentException e) {
             String expectedMessage = "CWWKS4102E: The system cannot create the LTPA token because the required " + LTPAKeyFileUtility.KEYIMPORT_PUBLICKEY + " property is missing.";
             String actualMessage = e.getMessage();
@@ -175,9 +161,7 @@ public class LTPAKeyInfoManagerTest {
     @Test
     public void testNoRealm() throws Exception {
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          KEYIMPORTFILE_NO_REALM,
-                                          KEYPASSWORD_CORRECT, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, KEYIMPORTFILE_NO_REALM, KEYPASSWORD_CORRECT, null, false);
 
         Assert.assertNotNull("Secret key should not be null but was null",
                              keyInfoManager.getSecretKey(KEYIMPORTFILE_NO_REALM));
@@ -193,9 +177,7 @@ public class LTPAKeyInfoManagerTest {
     public void testCorrectInformation() throws Exception {
 
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          LTPA_KEY_IMPORT_FILE,
-                                          KEYPASSWORD_CORRECT, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, LTPA_KEY_IMPORT_FILE, KEYPASSWORD_CORRECT, null, false);
 
         // Check the secret key.
         Assert.assertNotNull(keyInfoManager.getSecretKey(LTPA_KEY_IMPORT_FILE));
@@ -233,9 +215,7 @@ public class LTPAKeyInfoManagerTest {
         WsResource ltpaFile = locAdmin.resolveResource(ltpaKeyFile);
         ltpaFile.delete();
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          ltpaKeyFile,
-                                          KEYPASSWORD_CORRECT, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, ltpaKeyFile, KEYPASSWORD_CORRECT, null, false);
 
         assertTrue("Expected CWWKS4103I message was not logged",
                    outputMgr.checkForMessages("CWWKS4103I:"));

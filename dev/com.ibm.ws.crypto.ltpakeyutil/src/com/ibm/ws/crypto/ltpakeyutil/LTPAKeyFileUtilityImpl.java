@@ -47,7 +47,7 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 	 * @throws Exception
 	 */
 	protected final Properties generateLTPAKeys(byte[] keyPasswordBytes, final String realm) throws Exception {
-		return generateLTPAKeys(keyPasswordBytes, null, null, null, realm);
+		return generateLTPAKeys(keyPasswordBytes, null, null, null, realm, "classical", null, 0);
 	}
 
 	/**
@@ -59,37 +59,50 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 	 * Otherwise, in the case of re-encrypting existing ltpa keys, pass the bytes in
 	 * sharedKeyBytes, privateKeyBytes, and publicKeyBytes to reuse them.
 	 *
-	 * @param keyPasswordBytes
-	 * @param sharedKeyBytes
-	 * @param privateKeyBytes
-	 * @param publicKeyBytes
-	 * @param realm
-	 * @return
-	 * @throws Exception
-	 */
-	protected final Properties generateLTPAKeys(byte[] keyPasswordBytes, byte[] sharedKeyBytes, byte[] privateKeyBytes,
-			byte[] publicKeyBytes, final String realm) throws Exception {
-		return generateLTPAKeys(keyPasswordBytes, sharedKeyBytes, privateKeyBytes, publicKeyBytes, realm, null, 0);
-	}
-
-	/**
-	 * Generates the LTPA keys and stores them into a Properties object.
-	 *
 	 * @param keyPasswordBytes  password used to encrypt stored private keys
 	 * @param sharedKeyBytes    existing shared key, or {@code null} to generate
 	 * @param privateKeyBytes   existing RSA private key, or {@code null} to generate (classical only)
 	 * @param publicKeyBytes    existing RSA public key, or {@code null} to generate (classical only)
 	 * @param realm             realm name stored in the key file
-	 * @param mldsaAlgorithm    ML-DSA algorithm (e.g. "ML-DSA-65"); non-null selects PQC mode
-	 * @param classicalKeySize  RSA key size in bytes (128=RSA-1024, 256=RSA-2048); 0 uses default
+	 * @param signingMode       signing mode ("classical", "pqc", "hybrid", "symmetric", "none"); null is
+	 *                          treated as "classical". The mode alone selects the key file format:
+	 *                          <ul>
+	 *                          <li>classical, none: v1.0/v2.0 RSA key file; {@code mldsaAlgorithm} is ignored</li>
+	 *                          <li>pqc: v3.0 ML-DSA key file; requires {@code mldsaAlgorithm}; {@code classicalKeySize} is ignored</li>
+	 *                          <li>hybrid: v3.0 ML-DSA + RSA key file; requires {@code mldsaAlgorithm} and {@code classicalKeySize > 0}</li>
+	 *                          <li>symmetric: v4.0 shared-key-only file; {@code mldsaAlgorithm} and {@code classicalKeySize} are ignored</li>
+	 *                          </ul>
+	 * @param mldsaAlgorithm    ML-DSA algorithm (e.g. "ML-DSA-65"); required for pqc and hybrid
+	 * @param classicalKeySize  RSA key size in bytes (128=RSA-1024, 256=RSA-2048); for classical/none 0 uses the default,
+	 *                          for hybrid it must be positive
 	 * @return Properties containing all LTPA key attributes
+	 * @throws IllegalArgumentException if signingMode is unknown or required arguments for the mode are missing
 	 * @throws Exception
 	 */
 	protected final Properties generateLTPAKeys(byte[] keyPasswordBytes, byte[] sharedKeyBytes, byte[] privateKeyBytes,
-			byte[] publicKeyBytes, final String realm, String mldsaAlgorithm, int classicalKeySize) throws Exception {
+			byte[] publicKeyBytes, final String realm, String signingMode, String mldsaAlgorithm, int classicalKeySize) throws Exception {
+		String mode = (signingMode == null) ? "classical" : signingMode.toLowerCase(java.util.Locale.ENGLISH);
+		switch (mode) {
+			case "classical":
+			case "none":
+			case "symmetric":
+				break;
+			case "pqc":
+			case "hybrid":
+				if (mldsaAlgorithm == null) {
+					throw new IllegalArgumentException("signingMode=" + signingMode + " requires an ML-DSA algorithm");
+				}
+				if ("hybrid".equals(mode) && classicalKeySize <= 0) {
+					throw new IllegalArgumentException("signingMode=hybrid requires a positive classicalKeySize");
+				}
+				break;
+			default:
+				throw new IllegalArgumentException("Unsupported signingMode: " + signingMode);
+		}
+
 		long startGenerate = System.currentTimeMillis();
-		System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: start; mldsaAlgorithm=" + mldsaAlgorithm
-				+ ", classicalKeySize=" + classicalKeySize + "; time=" + startGenerate + " ms");
+		System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: start; signingMode=" + signingMode
+				+ ", mldsaAlgorithm=" + mldsaAlgorithm + ", classicalKeySize=" + classicalKeySize + "; time=" + startGenerate + " ms");
 
 		Properties expProps = null;
 
@@ -116,13 +129,28 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 			expProps.put(CREATION_HOST_PROPERTY, "localhost");
 			expProps.put(CREATION_DATE_PROPERTY, (new java.util.Date()).toString());
 
-			if (mldsaAlgorithm == null) {
-				if (classicalKeySize <= 0) {
-					classicalKeySize = LTPADigSignature.keySize;
-				}
-				// v2.0 = RSA-2048 (classicalKeySize >= 256 bytes).
-				// v1.0 = RSA-1024 (classicalKeySize < 256 bytes).
-				boolean rsa2048 = (classicalKeySize >= 256);
+			if ("symmetric".equals(mode)) {
+				// v4.0 = Pure Symmetric (Master Shared Key only, no RSA or ML-DSA keys).
+				// Key encrypting algorithm: always AES-CBC-256 for v4.0 key files.
+				String keyEncAlgorithm = "AES-CBC-256";
+				expProps.put(LTPA_VERSION_PROPERTY, "4.0");
+
+				// Shared key encryption
+				long startSharedEncrypt = System.currentTimeMillis();
+				expProps.put(KEYIMPORT_SECRETKEY_V1,
+				             Base64Coder.base64EncodeToString(encryptor.encryptAES(sharedKeyBytes)));
+				long sharedEncryptMs = System.currentTimeMillis() - startSharedEncrypt;
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: shared key encryption (keyEncAlgorithm=" + keyEncAlgorithm + ") took " + sharedEncryptMs + " ms");
+
+				long totalMs = System.currentTimeMillis() - startGenerate;
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (v4.0 Symmetric, keyEncAlgorithm=" + keyEncAlgorithm + "): end;"
+						+ " encryptor=" + encryptorMs + " ms, sharedKey=" + sharedKeyMs + " ms, sharedEncrypt=" + sharedEncryptMs
+						+ " ms, total=" + totalMs + " ms");
+			} else if ("classical".equals(mode) || "none".equals(mode)) {
+				int rsaKeySize = (classicalKeySize == 0) ? LTPADigSignature.keySize : classicalKeySize;
+				// v2.0 = RSA-2048 (rsaKeySize >= 256 bytes).
+				// v1.0 = RSA-1024 (rsaKeySize < 256 bytes).
+				boolean rsa2048 = (rsaKeySize >= 256);
 				expProps.put(LTPA_VERSION_PROPERTY, rsa2048 ? "2.0" : "1.0");
 				// Key encrypting algorithm: AES-CBC-256 for v2.0; FIPS-aware cipher for v1.0
 				String keyEncAlgorithm = rsa2048 ? "AES-CBC-256" : CryptoUtils.getCipher();
@@ -145,11 +173,11 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 				long keyPairMs = 0;
 				if (publicKeyBytes == null && privateKeyBytes == null) {
 					long startKeyPair = System.currentTimeMillis();
-					LTPAKeyPair pair = LTPADigSignature.generateLTPAKeyPair(classicalKeySize);
+					LTPAKeyPair pair = LTPADigSignature.generateLTPAKeyPair(rsaKeySize);
 					publicKeyBytes = pair.getPublic().getEncoded();
 					privateKeyBytes = pair.getPrivate().getEncoded();
 					keyPairMs = System.currentTimeMillis() - startKeyPair;
-					System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: RSA-" + (classicalKeySize * 8) + " key pair generation took " + keyPairMs + " ms");
+					System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: RSA-" + (rsaKeySize * 8) + " key pair generation took " + keyPairMs + " ms");
 				} else {
 					System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys: RSA key pair reused (skipped generation)");
 				}
@@ -166,7 +194,7 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 				expProps.put(KEYIMPORT_PUBLICKEY, Base64Coder.base64EncodeToString(publicKeyBytes));
 
 				long totalMs = System.currentTimeMillis() - startGenerate;
-				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (RSA-" + (classicalKeySize * 8) + ", keyEncAlgorithm=" + keyEncAlgorithm + "): end;"
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (RSA-" + (rsaKeySize * 8) + ", keyEncAlgorithm=" + keyEncAlgorithm + "): end;"
 						+ " encryptor=" + encryptorMs + " ms, sharedKey=" + sharedKeyMs + " ms, sharedEncrypt=" + sharedEncryptMs
 						+ " ms, keyPair=" + keyPairMs + " ms, privateEncrypt=" + privateEncryptMs + " ms, total=" + totalMs + " ms");
 			} else {
@@ -202,7 +230,7 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 				}
 
 				// RSA key pair generation: only when classicalKeySize > 0 (Hybrid mode)
-				if (classicalKeySize > 0) {
+				if ("hybrid".equals(mode)) {
 					long keyPairMs = 0;
 					if (publicKeyBytes == null && privateKeyBytes == null) {
 						long startKeyPair = System.currentTimeMillis();
@@ -227,7 +255,7 @@ public class LTPAKeyFileUtilityImpl implements LTPAKeyFileUtility {
 				}
 
 				long totalMs = System.currentTimeMillis() - startGenerate;
-				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (" + mldsaAlgorithm + (classicalKeySize > 0 ? (" + RSA-" + (classicalKeySize * 8)) : "") + ", keyEncAlgorithm=" + keyEncAlgorithm + "): end;"
+				System.out.println("[LTPAKeyFileUtilityImpl] generateLTPAKeys (" + mldsaAlgorithm + ("hybrid".equals(mode) ? (" + RSA-" + (classicalKeySize * 8)) : "") + ", keyEncAlgorithm=" + keyEncAlgorithm + "): end;"
 						+ " encryptor=" + encryptorMs + " ms, sharedKey=" + sharedKeyMs + " ms, sharedEncrypt=" + sharedEncryptMs
 						+ " ms, mldsaKeyPair=" + mldsaKeyPairMs + " ms, total=" + totalMs + " ms");
 			}

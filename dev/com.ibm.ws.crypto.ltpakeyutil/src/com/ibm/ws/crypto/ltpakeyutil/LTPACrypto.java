@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1997, 2011, 2025 IBM Corporation and others.
+ * Copyright (c) 1997, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -894,7 +894,161 @@ final class LTPACrypto {
     private static final byte[] KDF_INFO = "LTPA2-KDF-AES-GCM-256".getBytes(StandardCharsets.UTF_8);
 
     /**
+     * HKDF-Extract step (RFC 5869) using HMAC-SHA256.
+     *
+     * @param salt      Salt value (or null/empty for 32 zero bytes)
+     * @param masterKey Input keying material (master key)
+     * @return Pseudorandom key (PRK, 32 bytes)
+     * @throws Exception if HMAC fails
+     */
+    @Sensitive
+    protected static final byte[] hkdfExtract(byte[] salt, @Sensitive byte[] masterKey) throws Exception {
+        Mac mac = (provider == null) ? Mac.getInstance("HmacSHA256") : Mac.getInstance("HmacSHA256", provider);
+        if (salt == null || salt.length == 0) {
+            salt = new byte[32];
+        }
+        mac.init(new SecretKeySpec(salt, "HmacSHA256"));
+        return mac.doFinal(masterKey);
+    }
+
+    /**
+     * HKDF-Expand step (RFC 5869) using HMAC-SHA256.
+     *
+     * @param prk    Pseudorandom key
+     * @param info   Context and application-specific information
+     * @param length Desired output key length in bytes
+     * @return Derived key (OKM)
+     * @throws Exception if HMAC fails
+     */
+    @Sensitive
+    protected static final byte[] hkdfExpand(byte[] prk, byte[] info, int length) throws Exception {
+        Mac mac = (provider == null) ? Mac.getInstance("HmacSHA256") : Mac.getInstance("HmacSHA256", provider);
+        mac.init(new SecretKeySpec(prk, "HmacSHA256"));
+        mac.update(info);
+        mac.update((byte) 0x01);
+        byte[] okm = mac.doFinal();
+        return (length == okm.length) ? okm : Arrays.copyOf(okm, length);
+    }
+
+    /**
+     * Derive a signing key from the master shared key using HKDF (HMAC-SHA256) with domain-specific info.
+     *
+     * @param masterKey The master LTPA shared key
+     * @param sigAlg    The signature algorithm name (e.g. "AES-GCM-256")
+     * @return 256-bit (32 bytes) derived signing key
+     * @throws Exception if key derivation fails
+     */
+    @Sensitive
+    protected static final byte[] deriveSigningKey(@Sensitive byte[] masterKey, String sigAlg) throws Exception {
+        byte[] prk = hkdfExtract(null, masterKey);
+        byte[] info = ("LTPA4-" + sigAlg + "-SIG").getBytes(StandardCharsets.UTF_8);
+        return hkdfExpand(prk, info, 32);
+    }
+
+    /**
+     * Derive an encryption key from the master shared key using HKDF (HMAC-SHA256) with algorithm-specific info.
+     *
+     * @param masterKey      The master LTPA shared key
+     * @param cipher         The cipher string or algorithm name (e.g. "AES-GCM-256", "AES-CBC-128", "AES-CBC-256")
+     * @param keyLengthBytes Desired key length in bytes (16 or 32)
+     * @return Derived encryption key
+     * @throws Exception if key derivation fails
+     */
+    @Sensitive
+    protected static final byte[] deriveEncryptionKey(@Sensitive byte[] masterKey, String cipher, int keyLengthBytes) throws Exception {
+        byte[] prk = hkdfExtract(null, masterKey);
+        String encAlg;
+        int len;
+        if (CryptoUtils.AES_GCM_CIPHER.equals(cipher) || "AES-GCM-256".equals(cipher)) {
+            encAlg = "AES-GCM-256";
+            len = (keyLengthBytes > 0) ? keyLengthBytes : 32;
+        } else if (keyLengthBytes == 16 || "AES-CBC-128".equals(cipher)) {
+            encAlg = "AES-CBC-128";
+            len = 16;
+        } else if (keyLengthBytes == 32 || "AES-CBC-256".equals(cipher)) {
+            encAlg = "AES-CBC-256";
+            len = 32;
+        } else {
+            encAlg = cipher;
+            len = (keyLengthBytes > 0) ? keyLengthBytes : 32;
+        }
+        byte[] info = ("LTPA4-" + encAlg + "-ENC").getBytes(StandardCharsets.UTF_8);
+        return hkdfExpand(prk, info, len);
+    }
+
+    /**
+     * Sign data using AES-GCM-256 (GMAC).
+     * Computes a 128-bit (16-byte) authentication tag over {@code data} with a fresh 12-byte IV.
+     * Output format: [IV (12 bytes)][Auth Tag (16 bytes)] (28 bytes total).
+     *
+     * @param data The data to sign
+     * @param key  The derived 256-bit signing key
+     * @return 28-byte signature consisting of IV and authentication tag
+     * @throws Exception if signing fails
+     */
+    protected static final byte[] signGCM(byte[] data, byte[] key) throws Exception {
+        long startSign = System.currentTimeMillis();
+        byte[] iv = new byte[12];
+        SecureRandom random = new SecureRandom();
+        random.nextBytes(iv);
+
+        Cipher cipher = (provider == null)
+            ? Cipher.getInstance("AES/GCM/NoPadding")
+            : Cipher.getInstance("AES/GCM/NoPadding", provider);
+        GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv);
+        SecretKeySpec keySpec = new SecretKeySpec(key, "AES");
+        cipher.init(Cipher.ENCRYPT_MODE, keySpec, gcmSpec);
+        cipher.updateAAD(data);
+        byte[] tag = cipher.doFinal(); // Encrypts empty plaintext, returns 16-byte tag
+
+        byte[] signature = new byte[12 + tag.length];
+        System.arraycopy(iv, 0, signature, 0, 12);
+        System.arraycopy(tag, 0, signature, 12, tag.length);
+
+        long signMs = System.currentTimeMillis() - startSign;
+        System.out.println("[LTPACrypto] signGCM (AES-GCM-256 GMAC): end; dataLen=" + data.length + ", sigLen=" + signature.length + ", took=" + signMs + " ms");
+        return signature;
+    }
+
+    /**
+     * Verify a signature using AES-GCM-256 (GMAC).
+     * Expects [IV (12 bytes)][Auth Tag (16 bytes)] (28 bytes total).
+     *
+     * @param data      The data that was signed
+     * @param signature The 28-byte signature (IV + Tag)
+     * @param key       The derived 256-bit signing key
+     * @return true if valid, false if signature is invalid or tampered
+     */
+    protected static final boolean verifyGCM(byte[] data, byte[] signature, byte[] key) {
+        if (data == null || signature == null || key == null || signature.length != 28) {
+            return false;
+        }
+        try {
+            long startVerify = System.currentTimeMillis();
+            byte[] iv = Arrays.copyOfRange(signature, 0, 12);
+            byte[] tag = Arrays.copyOfRange(signature, 12, signature.length);
+
+            Cipher cipher = (provider == null)
+                ? Cipher.getInstance("AES/GCM/NoPadding")
+                : Cipher.getInstance("AES/GCM/NoPadding", provider);
+            GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv);
+            SecretKeySpec keySpec = new SecretKeySpec(key, "AES");
+            cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec);
+            cipher.updateAAD(data);
+            cipher.doFinal(tag); // Throws AEADBadTagException if tag mismatch
+
+            long verifyMs = System.currentTimeMillis() - startVerify;
+            System.out.println("[LTPACrypto] verifyGCM (AES-GCM-256 GMAC): valid=true, took=" + verifyMs + " ms");
+            return true;
+        } catch (Exception e) {
+            System.out.println("[LTPACrypto] verifyGCM (AES-GCM-256 GMAC): valid=false (exception: " + e.getMessage() + ")");
+            return false;
+        }
+    }
+
+    /**
      * Derive a 256-bit AES key from the master shared key and a per-token salt using HKDF (HMAC-SHA256).
+     * Retained for prototype encryptionAlgorithm="KDF".
      *
      * @param masterKey The master LTPA shared key
      * @param salt      The per-token random salt (32 bytes)

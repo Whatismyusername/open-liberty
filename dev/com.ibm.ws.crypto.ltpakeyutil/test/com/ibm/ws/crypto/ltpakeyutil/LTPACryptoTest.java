@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2025 IBM Corporation and others.
+ * Copyright (c) 2007, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -387,6 +387,75 @@ private static final byte[] PUBLIC_KEY = new byte[] { 0, -46, -121, -116, 118, 7
             }
         }
         Assert.assertTrue(same);
+    }
+
+    @Test
+    public void testSignAndVerifyGCM() throws Exception {
+        byte[] masterKey = LTPACrypto.generateSharedKey();
+        byte[] signingKey = LTPACrypto.deriveSigningKey(masterKey, "AES-GCM-256");
+        Assert.assertNotNull(signingKey);
+        Assert.assertEquals(32, signingKey.length);
+
+        byte[] data = "user:testUser%1234567890".getBytes();
+        byte[] signature = LTPACrypto.signGCM(data, signingKey);
+
+        Assert.assertNotNull(signature);
+        Assert.assertEquals(28, signature.length); // 12-byte IV + 16-byte Tag
+
+        // Valid signature verification
+        boolean valid = LTPACrypto.verifyGCM(data, signature, signingKey);
+        Assert.assertTrue("Signature should be valid", valid);
+
+        // Tampered data
+        byte[] tamperedData = "user:fakeUser%1234567890".getBytes();
+        boolean invalidData = LTPACrypto.verifyGCM(tamperedData, signature, signingKey);
+        Assert.assertFalse("Tampered data should fail verification", invalidData);
+
+        // Tampered signature
+        byte[] tamperedSig = signature.clone();
+        tamperedSig[15] ^= 0x01;
+        boolean invalidSig = LTPACrypto.verifyGCM(data, tamperedSig, signingKey);
+        Assert.assertFalse("Tampered signature should fail verification", invalidSig);
+
+        // Wrong key
+        byte[] wrongKey = LTPACrypto.generateSharedKey();
+        byte[] wrongSigningKey = LTPACrypto.deriveSigningKey(wrongKey, "AES-GCM-256");
+        boolean invalidKey = LTPACrypto.verifyGCM(data, signature, wrongSigningKey);
+        Assert.assertFalse("Wrong key should fail verification", invalidKey);
+    }
+
+    @Test
+    public void testDeriveEncryptionKeys() throws Exception {
+        byte[] masterKey = LTPACrypto.generateSharedKey();
+
+        byte[] gcmEncKey = LTPACrypto.deriveEncryptionKey(masterKey, "AES-GCM-256", 32);
+        Assert.assertNotNull(gcmEncKey);
+        Assert.assertEquals(32, gcmEncKey.length);
+
+        byte[] cbc128EncKey = LTPACrypto.deriveEncryptionKey(masterKey, "AES-CBC-128", 16);
+        Assert.assertNotNull(cbc128EncKey);
+        Assert.assertEquals(16, cbc128EncKey.length);
+
+        byte[] cbc256EncKey = LTPACrypto.deriveEncryptionKey(masterKey, "AES-CBC-256", 32);
+        Assert.assertNotNull(cbc256EncKey);
+        Assert.assertEquals(32, cbc256EncKey.length);
+
+        byte[] sigKey = LTPACrypto.deriveSigningKey(masterKey, "AES-GCM-256");
+
+        // Verify canonical and JCA cipher inputs produce identical keys
+        byte[] jcaGcmKey = LTPACrypto.deriveEncryptionKey(masterKey, "AES/GCM/NoPadding", 32);
+        Assert.assertArrayEquals("Canonical and JCA GCM cipher strings must derive identical key", gcmEncKey, jcaGcmKey);
+
+        byte[] jcaCbc128Key = LTPACrypto.deriveEncryptionKey(masterKey, "AES/CBC/PKCS5Padding", 16);
+        Assert.assertArrayEquals("Canonical and JCA CBC-128 cipher strings must derive identical key", cbc128EncKey, jcaCbc128Key);
+
+        byte[] jcaCbc256Key = LTPACrypto.deriveEncryptionKey(masterKey, "AES/CBC/PKCS5Padding", 32);
+        Assert.assertArrayEquals("Canonical and JCA CBC-256 cipher strings must derive identical key", cbc256EncKey, jcaCbc256Key);
+
+        // Verify keys are all distinct
+        Assert.assertFalse(java.util.Arrays.equals(gcmEncKey, cbc256EncKey));
+        Assert.assertFalse(java.util.Arrays.equals(gcmEncKey, sigKey));
+        Assert.assertFalse(java.util.Arrays.equals(cbc256EncKey, sigKey));
     }
 
 }

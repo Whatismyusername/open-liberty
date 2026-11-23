@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1997, 2024 IBM Corporation and others.
+ * Copyright (c) 1997, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -29,6 +29,10 @@ final class LTPADigSignature {
 
 	public LTPADigSignature() {
 		super();
+	}
+
+	static void generateRSAKeys(byte[][] rsaPubKey, byte[][] rsaPrivKey) {
+		generateRSAKeys(rsaPubKey, rsaPrivKey, keySize);
 	}
 
 	static void generateRSAKeys(byte[][] rsaPubKey, byte[][] rsaPrivKey, int len) {

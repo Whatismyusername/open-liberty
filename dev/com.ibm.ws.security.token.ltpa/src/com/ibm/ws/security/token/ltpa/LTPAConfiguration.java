@@ -83,7 +83,7 @@ public interface LTPAConfiguration {
     
     /**
      * The signing mode for LTPA tokens.
-     * Valid values: "classical", "pqc", "none"
+     * Valid values: "classical", "pqc", "hybrid", "symmetric", "none"
      */
     public static final String CFG_KEY_SIGNING_MODE = "signingMode";
 
@@ -92,6 +92,12 @@ public interface LTPAConfiguration {
      * Valid values: "SHA1withRSA" (non-FIPS default), "SHA512withRSA" (FIPS default)
      */
     public static final String CFG_KEY_CLASSICAL_SIGNATURE_ALGORITHM = "classicalSignatureAlgorithm";
+
+    /**
+     * The symmetric digital signature algorithm.
+     * Valid values: "AES-GCM-256" (default)
+     */
+    public static final String CFG_KEY_SYMMETRIC_SIGNATURE_ALGORITHM = "symmetricSignatureAlgorithm";
 
     /**
      * The RSA key size in bits for the classical signature algorithm.
@@ -203,6 +209,13 @@ public interface LTPAConfiguration {
      * @return The PQC signature algorithm: "ML-DSA-44", "ML-DSA-65", or "ML-DSA-87"
      */
     String getPqcSignatureAlgorithm();
+
+    /**
+     * Get the symmetric signature algorithm for LTPA tokens.
+     *
+     * @return The symmetric signature algorithm: "AES-GCM-256"
+     */
+    String getSymmetricSignatureAlgorithm();
 
     /**
      * Get the symmetric encryption algorithm for LTPA token payloads.

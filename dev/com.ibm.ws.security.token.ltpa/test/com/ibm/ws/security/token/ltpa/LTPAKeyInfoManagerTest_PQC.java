@@ -18,7 +18,6 @@ import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import test.UTLocationHelper;
 import test.common.SharedOutputManager;
 
 /**
@@ -59,9 +58,7 @@ public class LTPAKeyInfoManagerTest_PQC {
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
         String pqcKeyFile = "${server.config.dir}/resources/security/security.token.ltpa.keys.pqc.txt";
         
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          pqcKeyFile,
-                                          KEYPASSWORD_CORRECT, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, pqcKeyFile, KEYPASSWORD_CORRECT, null, false);
         
         // Verify classical keys are loaded
         Assert.assertNotNull("Secret key should not be null", 
@@ -87,9 +84,7 @@ public class LTPAKeyInfoManagerTest_PQC {
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
         
         // Load a classical LTPA key file without PQC keys
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          LTPA_KEY_IMPORT_FILE,
-                                          KEYPASSWORD_CORRECT, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, LTPA_KEY_IMPORT_FILE, KEYPASSWORD_CORRECT, null, false);
         
         // Verify classical keys are loaded
         Assert.assertNotNull("Secret key should not be null", 
@@ -125,9 +120,7 @@ public class LTPAKeyInfoManagerTest_PQC {
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
         String pqcKeyFile = "${server.config.dir}/resources/security/security.token.ltpa.keys.pqc.txt";
         
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          pqcKeyFile,
-                                          KEYPASSWORD_CORRECT, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, pqcKeyFile, KEYPASSWORD_CORRECT, null, false);
         
         // Get PQC keys first time
         byte[] mldsaPrivateKey1 = keyInfoManager.getMLDSAPrivateKey(pqcKeyFile);
@@ -152,9 +145,7 @@ public class LTPAKeyInfoManagerTest_PQC {
         LTPAKeyInfoManager keyInfoManager = new LTPAKeyInfoManager();
         String hybridKeyFile = "${server.config.dir}/resources/security/security.token.ltpa.keys.hybrid.txt";
         
-        keyInfoManager.prepareLTPAKeyInfo(UTLocationHelper.getLocationManager(),
-                                          hybridKeyFile,
-                                          KEYPASSWORD_CORRECT, null, false);
+        LTPAKeyInfoManagerTestUtil.prepareClassical(keyInfoManager, hybridKeyFile, KEYPASSWORD_CORRECT, null, false);
         
         // Verify all classical keys are present
         Assert.assertNotNull("Secret key should not be null in hybrid mode", 

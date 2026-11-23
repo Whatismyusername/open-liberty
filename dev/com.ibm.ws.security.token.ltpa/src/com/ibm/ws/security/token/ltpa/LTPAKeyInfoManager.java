@@ -97,6 +97,7 @@ public class LTPAKeyInfoManager {
     private final String suffixNoFips = ".nofips";
     private final String suffixFips = ".fips";
     private final String suffixPqc = ".pqc";
+    private final String suffixSymmetric = ".symmetric";
 
     private static CopyOnWriteArrayList<LTPAValidationKeysInfo> ltpaValidationKeysInfos = new CopyOnWriteArrayList<LTPAValidationKeysInfo>();
 
@@ -136,6 +137,9 @@ public class LTPAKeyInfoManager {
      *                                 ${app.root}/config
      * @param primaryKeyPassword   The password of the LTPA keys
      * @param validationKeys       The validationKeys
+     * @param signingMode          Signing mode used if the primary key file must be created
+     * @param mldsaAlgorithm       ML-DSA algorithm used if the primary key file must be created (pqc/hybrid)
+     * @param classicalKeySize     RSA key size in bytes used if the primary key file must be created
      * @throws IOException
      */
     @SuppressWarnings("deprecation")
@@ -241,15 +245,21 @@ public class LTPAKeyInfoManager {
 
             boolean isPqcMode = "pqc".equals(signingMode);
             boolean isHybridMode = "hybrid".equals(signingMode);
+            boolean isSymmetricMode = "symmetric".equalsIgnoreCase(signingMode);
             boolean isFips = CryptoUtils.isFips140_3Enabled();
 
             if (!validationKey) {
                 // Determine whether the primary key file version is compatible with the resolved
-                // configuration (PQC mode vs. hybrid mode vs. classical RSA key size).
+                // configuration (PQC mode vs. hybrid mode vs. classical RSA key size vs. symmetric v4).
                 boolean versionMismatch = false;
                 String restoreSuffix = null;
 
-                if (isPqcMode) {
+                if (isSymmetricMode) {
+                    if (!"4.0".equals(version)) {
+                        versionMismatch = true;
+                        restoreSuffix = suffixSymmetric;
+                    }
+                } else if (isPqcMode) {
                     if (!"3.0".equals(version)) {
                         versionMismatch = true;
                         restoreSuffix = suffixPqc;
@@ -263,7 +273,10 @@ public class LTPAKeyInfoManager {
                     }
                 } else {
                     // Classical mode configured
-                    if ("3.0".equals(version)) {
+                    if ("4.0".equals(version)) {
+                        versionMismatch = true;
+                        restoreSuffix = (classicalKeySize >= 256) ? suffixFips : suffixNoFips;
+                    } else if ("3.0".equals(version)) {
                         // Classical mode configured, but file is v3.0 (ML-DSA-only).
                         // Back up with .pqc, restore from the suffix that matches the configured RSA key size:
                         //   RSA-2048 (classicalKeySize >= 256) → .fips  (where v2.0 backups are stored)
@@ -343,9 +356,9 @@ public class LTPAKeyInfoManager {
                 Tr.debug(tc, "PQC keys present: " + (mldsaPrivateKeyStr != null && mldsaPublicKeyStr != null));
         }
 
-        // v2.0 and v3.0 key files are always encrypted with AES regardless of the
+        // v2.0, v3.0, and v4.0 key files are always encrypted with AES regardless of the
         // writing server's FIPS mode, so any server can load them.
-        boolean useAES = "2.0".equals(version) || "3.0".equals(version);
+        boolean useAES = "2.0".equals(version) || "3.0".equals(version) || "4.0".equals(version);
 
         byte[] secretKey, privateKey, publicKey;
         byte[] mldsaPrivateKey, mldsaPublicKey;
@@ -555,7 +568,9 @@ public class LTPAKeyInfoManager {
      */
     private void backupLtpaKeyFile(WsLocationAdmin locService, String keyImportFile, WsResource ltpaKeyFileResource, String version) throws IOException {
         String suffix;
-        if ("3.0".equals(version)) {
+        if ("4.0".equals(version)) {
+            suffix = suffixSymmetric;
+        } else if ("3.0".equals(version)) {
             suffix = suffixPqc;
         } else if ("2.0".equals(version)) {
             suffix = suffixFips;
@@ -671,14 +686,7 @@ public class LTPAKeyInfoManager {
         Tr.info(tc, "LTPA_CREATE_KEYS_START");
 
         LTPAKeyFileCreator creator = new LTPAKeyFileCreatorImpl();
-        Properties props;
-        if ("pqc".equals(signingMode)) {
-            props = creator.createLTPAKeysFile(locService, keyImportFile, keyPassword, mldsaAlgorithm);
-        } else if ("hybrid".equals(signingMode)) {
-            props = creator.createLTPAKeysFile(locService, keyImportFile, keyPassword, mldsaAlgorithm, classicalKeySize);
-        } else {
-            props = creator.createLTPAKeysFile(locService, keyImportFile, keyPassword, classicalKeySize);
-        }
+        Properties props = creator.createLTPAKeysFile(locService, keyImportFile, keyPassword, signingMode, mldsaAlgorithm, classicalKeySize);
 
         Tr.audit(tc, "LTPA_CREATE_KEYS_COMPLETE", TimestampUtils.getElapsedTime(start), keyImportFile);
         return props;
