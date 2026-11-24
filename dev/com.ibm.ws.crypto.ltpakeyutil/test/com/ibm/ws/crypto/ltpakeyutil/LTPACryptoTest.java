@@ -390,38 +390,84 @@ private static final byte[] PUBLIC_KEY = new byte[] { 0, -46, -121, -116, 118, 7
     }
 
     @Test
-    public void testSignAndVerifyGCM() throws Exception {
+    public void testSignAndVerifyGMAC() throws Exception {
         byte[] masterKey = LTPACrypto.generateSharedKey();
-        byte[] signingKey = LTPACrypto.deriveSigningKey(masterKey, "AES-GCM-256");
+        byte[] signingKey = LTPACrypto.deriveSigningKey(masterKey, "AES-GMAC-256");
         Assert.assertNotNull(signingKey);
         Assert.assertEquals(32, signingKey.length);
 
         byte[] data = "user:testUser%1234567890".getBytes();
-        byte[] signature = LTPACrypto.signGCM(data, signingKey);
+        byte[] signature = LTPACrypto.signGMAC(data, signingKey);
 
         Assert.assertNotNull(signature);
         Assert.assertEquals(28, signature.length); // 12-byte IV + 16-byte Tag
 
         // Valid signature verification
-        boolean valid = LTPACrypto.verifyGCM(data, signature, signingKey);
+        boolean valid = LTPACrypto.verifyGMAC(data, signature, signingKey);
         Assert.assertTrue("Signature should be valid", valid);
 
         // Tampered data
         byte[] tamperedData = "user:fakeUser%1234567890".getBytes();
-        boolean invalidData = LTPACrypto.verifyGCM(tamperedData, signature, signingKey);
+        boolean invalidData = LTPACrypto.verifyGMAC(tamperedData, signature, signingKey);
         Assert.assertFalse("Tampered data should fail verification", invalidData);
 
         // Tampered signature
         byte[] tamperedSig = signature.clone();
         tamperedSig[15] ^= 0x01;
-        boolean invalidSig = LTPACrypto.verifyGCM(data, tamperedSig, signingKey);
+        boolean invalidSig = LTPACrypto.verifyGMAC(data, tamperedSig, signingKey);
         Assert.assertFalse("Tampered signature should fail verification", invalidSig);
 
         // Wrong key
         byte[] wrongKey = LTPACrypto.generateSharedKey();
-        byte[] wrongSigningKey = LTPACrypto.deriveSigningKey(wrongKey, "AES-GCM-256");
-        boolean invalidKey = LTPACrypto.verifyGCM(data, signature, wrongSigningKey);
+        byte[] wrongSigningKey = LTPACrypto.deriveSigningKey(wrongKey, "AES-GMAC-256");
+        boolean invalidKey = LTPACrypto.verifyGMAC(data, signature, wrongSigningKey);
         Assert.assertFalse("Wrong key should fail verification", invalidKey);
+    }
+
+    @Test
+    public void testSignAndVerifyHMAC() throws Exception {
+        byte[] masterKey = LTPACrypto.generateSharedKey();
+        byte[] signingKey = LTPACrypto.deriveSigningKey(masterKey, "HMAC-SHA-256");
+        Assert.assertNotNull(signingKey);
+        Assert.assertEquals(32, signingKey.length);
+
+        byte[] data = "user:testUser%1234567890".getBytes();
+        byte[] signature = LTPACrypto.signHMAC(data, signingKey);
+
+        Assert.assertNotNull(signature);
+        Assert.assertEquals(32, signature.length); // HMAC-SHA-256 tag, no IV
+        Assert.assertArrayEquals("HMAC is deterministic", signature, LTPACrypto.signHMAC(data, signingKey));
+
+        Assert.assertTrue("Signature should be valid", LTPACrypto.verifyHMAC(data, signature, signingKey));
+
+        // Tampered data
+        byte[] tamperedData = "user:fakeUser%1234567890".getBytes();
+        Assert.assertFalse("Tampered data should fail verification", LTPACrypto.verifyHMAC(tamperedData, signature, signingKey));
+
+        // Tampered signature
+        byte[] tamperedSig = signature.clone();
+        tamperedSig[15] ^= 0x01;
+        Assert.assertFalse("Tampered signature should fail verification", LTPACrypto.verifyHMAC(data, tamperedSig, signingKey));
+
+        // Wrong length signature
+        Assert.assertFalse("Truncated signature should fail verification", LTPACrypto.verifyHMAC(data, Arrays.copyOf(signature, 31), signingKey));
+
+        // Wrong key
+        byte[] wrongSigningKey = LTPACrypto.deriveSigningKey(LTPACrypto.generateSharedKey(), "HMAC-SHA-256");
+        Assert.assertFalse("Wrong key should fail verification", LTPACrypto.verifyHMAC(data, signature, wrongSigningKey));
+    }
+
+    @Test
+    public void testSigningKeysAreDomainSeparatedPerAlgorithm() throws Exception {
+        byte[] masterKey = LTPACrypto.generateSharedKey();
+        byte[] gmacKey = LTPACrypto.deriveSigningKey(masterKey, "AES-GMAC-256");
+        byte[] hmacKey = LTPACrypto.deriveSigningKey(masterKey, "HMAC-SHA-256");
+        Assert.assertFalse("GMAC and HMAC signing keys must differ", Arrays.equals(gmacKey, hmacKey));
+
+        // A GMAC signature must not verify as HMAC, and vice versa.
+        byte[] data = "user:testUser%1234567890".getBytes();
+        Assert.assertFalse(LTPACrypto.verifyHMAC(data, LTPACrypto.signGMAC(data, gmacKey), hmacKey));
+        Assert.assertFalse(LTPACrypto.verifyGMAC(data, LTPACrypto.signHMAC(data, hmacKey), gmacKey));
     }
 
     @Test
@@ -440,7 +486,7 @@ private static final byte[] PUBLIC_KEY = new byte[] { 0, -46, -121, -116, 118, 7
         Assert.assertNotNull(cbc256EncKey);
         Assert.assertEquals(32, cbc256EncKey.length);
 
-        byte[] sigKey = LTPACrypto.deriveSigningKey(masterKey, "AES-GCM-256");
+        byte[] sigKey = LTPACrypto.deriveSigningKey(masterKey, "AES-GMAC-256");
 
         // Verify canonical and JCA cipher inputs produce identical keys
         byte[] jcaGcmKey = LTPACrypto.deriveEncryptionKey(masterKey, "AES/GCM/NoPadding", 32);

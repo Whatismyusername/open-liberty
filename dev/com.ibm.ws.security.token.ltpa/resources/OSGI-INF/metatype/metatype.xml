@@ -72,8 +72,9 @@
         </AD>
         <AD id="symmetricSignatureAlgorithm" name="%symmetricSignatureAlgorithm" description="%symmetricSignatureAlgorithm.desc"
             required="false" type="String"
-            default="AES-GCM-256">
-            <Option label="%symmetricSignatureAlgorithm.aes256gcm" value="AES-GCM-256"/>
+            default="HMAC-SHA-256">
+            <Option label="%symmetricSignatureAlgorithm.hmacsha256" value="HMAC-SHA-256"/>
+            <Option label="%symmetricSignatureAlgorithm.aes256gmac" value="AES-GMAC-256"/>
         </AD>
         <AD id="classicalKeySize" name="%classicalKeySize" description="%classicalKeySize.desc"
             required="false" type="Integer">

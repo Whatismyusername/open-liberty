@@ -172,14 +172,14 @@ public class LTPAToken2FactoryTest {
     }
 
     @Test
-    public void testCreateAndValidateAESGCM256SymmetricToken() throws Exception {
+    public void testCreateAndValidateAESGMAC256SymmetricToken() throws Exception {
         byte[] sharedKey = "12345678901234567890123456789012".getBytes(); // 32 bytes master key
         Map<String, Object> symmetricFactoryMap = new HashMap<String, Object>();
         symmetricFactoryMap.put("expiration", 120L);
         symmetricFactoryMap.put("primary_ltpa_shared_key", sharedKey);
         symmetricFactoryMap.put("expirationDifferenceAllowed", 0L);
         symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SIGNING_MODE, "symmetric");
-        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "AES-GCM-256");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "AES-GMAC-256");
         symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_CIPHER, "AES/GCM/NoPadding");
         symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH, 32);
 
@@ -191,7 +191,7 @@ public class LTPAToken2FactoryTest {
 
         byte[] tokenBytes = token.getBytes();
         assertTrue("Token must have header magic", LTPATokenHeader.hasMagic(tokenBytes));
-        assertEquals("SigAlg must be AES-GCM-256 (0x06)", LTPATokenHeader.SIG_ALG_AES_GCM_256, tokenBytes[5]);
+        assertEquals("SigAlg must be AES-GMAC-256 (0x06)", LTPATokenHeader.SIG_ALG_AES_GMAC_256, tokenBytes[5]);
         assertEquals("EncAlg must be AES-GCM-256 (0x03)", LTPATokenHeader.ENC_ALG_AES_GCM_256, tokenBytes[6]);
 
         Token validatedToken = symmetricFactory.validateTokenBytes(tokenBytes);
@@ -200,14 +200,104 @@ public class LTPAToken2FactoryTest {
     }
 
     @Test
-    public void testCreateAndValidateAESGCM256SigningWithCBCEncryption() throws Exception {
+    public void testCreateAndValidateHMACSHA256SymmetricToken() throws Exception {
         byte[] sharedKey = "12345678901234567890123456789012".getBytes(); // 32 bytes master key
         Map<String, Object> symmetricFactoryMap = new HashMap<String, Object>();
         symmetricFactoryMap.put("expiration", 120L);
         symmetricFactoryMap.put("primary_ltpa_shared_key", sharedKey);
         symmetricFactoryMap.put("expirationDifferenceAllowed", 0L);
         symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SIGNING_MODE, "symmetric");
-        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "AES-GCM-256");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "HMAC-SHA-256");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_CIPHER, "AES/GCM/NoPadding");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH, 32);
+
+        LTPAToken2Factory symmetricFactory = createInitializedTokenFactory(symmetricFactoryMap);
+
+        Token token = symmetricFactory.createToken(createBasicLTPA2TokenData());
+        assertNotNull("There must be a token.", token);
+
+        byte[] tokenBytes = token.getBytes();
+        assertTrue("Token must have header magic", LTPATokenHeader.hasMagic(tokenBytes));
+        assertEquals("SigAlg must be HMAC-SHA-256 (0x07)", LTPATokenHeader.SIG_ALG_HMAC_SHA_256, tokenBytes[5]);
+        assertEquals("EncAlg must be AES-GCM-256 (0x03)", LTPATokenHeader.ENC_ALG_AES_GCM_256, tokenBytes[6]);
+
+        Token validatedToken = symmetricFactory.validateTokenBytes(tokenBytes);
+        assertNotNull("There must be a validated token.", validatedToken);
+        assertTrue("Token must be valid.", validatedToken.isValid());
+    }
+
+    @Test
+    public void testSymmetricSigAlgDefaultsToHMACSHA256() throws Exception {
+        byte[] sharedKey = "12345678901234567890123456789012".getBytes(); // 32 bytes master key
+        Map<String, Object> symmetricFactoryMap = new HashMap<String, Object>();
+        symmetricFactoryMap.put("expiration", 120L);
+        symmetricFactoryMap.put("primary_ltpa_shared_key", sharedKey);
+        symmetricFactoryMap.put("expirationDifferenceAllowed", 0L);
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SIGNING_MODE, "symmetric");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_CIPHER, "AES/GCM/NoPadding");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH, 32);
+
+        LTPAToken2Factory symmetricFactory = createInitializedTokenFactory(symmetricFactoryMap);
+
+        byte[] tokenBytes = symmetricFactory.createToken(createBasicLTPA2TokenData()).getBytes();
+        assertEquals("Default symmetric SigAlg must be HMAC-SHA-256 (0x07)", LTPATokenHeader.SIG_ALG_HMAC_SHA_256, tokenBytes[5]);
+        assertTrue("Token must be valid.", symmetricFactory.validateTokenBytes(tokenBytes).isValid());
+    }
+
+    @Test
+    public void testHMACSHA256SigningWithCBC256Encryption() throws Exception {
+        byte[] sharedKey = "12345678901234567890123456789012".getBytes(); // 32 bytes master key
+        Map<String, Object> symmetricFactoryMap = new HashMap<String, Object>();
+        symmetricFactoryMap.put("expiration", 120L);
+        symmetricFactoryMap.put("primary_ltpa_shared_key", sharedKey);
+        symmetricFactoryMap.put("expirationDifferenceAllowed", 0L);
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SIGNING_MODE, "symmetric");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "HMAC-SHA-256");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_CIPHER, "AES/CBC/PKCS5Padding");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH, 32); // AES-CBC-256
+
+        LTPAToken2Factory symmetricFactory = createInitializedTokenFactory(symmetricFactoryMap);
+
+        byte[] tokenBytes = symmetricFactory.createToken(createBasicLTPA2TokenData()).getBytes();
+        assertEquals("SigAlg must be HMAC-SHA-256 (0x07)", LTPATokenHeader.SIG_ALG_HMAC_SHA_256, tokenBytes[5]);
+        assertEquals("EncAlg must be AES-CBC-256 (0x02)", LTPATokenHeader.ENC_ALG_AES_CBC_256, tokenBytes[6]);
+        assertTrue("Token must be valid.", symmetricFactory.validateTokenBytes(tokenBytes).isValid());
+    }
+
+    @Test
+    public void testTokenSignedWithOneSymmetricAlgIsValidatedByHeader() throws Exception {
+        byte[] sharedKey = "12345678901234567890123456789012".getBytes(); // 32 bytes master key
+
+        Map<String, Object> hmacMap = new HashMap<String, Object>();
+        hmacMap.put("expiration", 120L);
+        hmacMap.put("primary_ltpa_shared_key", sharedKey);
+        hmacMap.put("expirationDifferenceAllowed", 0L);
+        hmacMap.put(LTPAConstants.CONFIGURED_SIGNING_MODE, "symmetric");
+        hmacMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "HMAC-SHA-256");
+        hmacMap.put(LTPAConstants.CONFIGURED_RESOLVED_CIPHER, "AES/GCM/NoPadding");
+        hmacMap.put(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH, 32);
+        LTPAToken2Factory hmacFactory = createInitializedTokenFactory(hmacMap);
+
+        Map<String, Object> gmacMap = new HashMap<String, Object>(hmacMap);
+        gmacMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "AES-GMAC-256");
+        LTPAToken2Factory gmacFactory = createInitializedTokenFactory(gmacMap);
+
+        // The header, not the local config, decides which algorithm verifies the token.
+        byte[] hmacTokenBytes = hmacFactory.createToken(createBasicLTPA2TokenData()).getBytes();
+        byte[] gmacTokenBytes = gmacFactory.createToken(createBasicLTPA2TokenData()).getBytes();
+        assertTrue("GMAC-configured factory must validate an HMAC token", gmacFactory.validateTokenBytes(hmacTokenBytes).isValid());
+        assertTrue("HMAC-configured factory must validate a GMAC token", hmacFactory.validateTokenBytes(gmacTokenBytes).isValid());
+    }
+
+    @Test
+    public void testCreateAndValidateAESGMAC256SigningWithCBCEncryption() throws Exception {
+        byte[] sharedKey = "12345678901234567890123456789012".getBytes(); // 32 bytes master key
+        Map<String, Object> symmetricFactoryMap = new HashMap<String, Object>();
+        symmetricFactoryMap.put("expiration", 120L);
+        symmetricFactoryMap.put("primary_ltpa_shared_key", sharedKey);
+        symmetricFactoryMap.put("expirationDifferenceAllowed", 0L);
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SIGNING_MODE, "symmetric");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "AES-GMAC-256");
         symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_CIPHER, "AES/CBC/PKCS5Padding");
         symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH, 16); // AES-CBC-128
 
@@ -219,7 +309,7 @@ public class LTPAToken2FactoryTest {
 
         byte[] tokenBytes = token.getBytes();
         assertTrue("Token must have header magic", LTPATokenHeader.hasMagic(tokenBytes));
-        assertEquals("SigAlg must be AES-GCM-256 (0x06)", LTPATokenHeader.SIG_ALG_AES_GCM_256, tokenBytes[5]);
+        assertEquals("SigAlg must be AES-GMAC-256 (0x06)", LTPATokenHeader.SIG_ALG_AES_GMAC_256, tokenBytes[5]);
         assertEquals("EncAlg must be AES-CBC-128 (0x01)", LTPATokenHeader.ENC_ALG_AES_CBC_128, tokenBytes[6]);
 
         Token validatedToken = symmetricFactory.validateTokenBytes(tokenBytes);
@@ -228,14 +318,14 @@ public class LTPAToken2FactoryTest {
     }
 
     @Test
-    public void testCreateAndValidateAESGCM256SigningWithCBC256Encryption() throws Exception {
+    public void testCreateAndValidateAESGMAC256SigningWithCBC256Encryption() throws Exception {
         byte[] sharedKey = "12345678901234567890123456789012".getBytes(); // 32 bytes master key
         Map<String, Object> symmetricFactoryMap = new HashMap<String, Object>();
         symmetricFactoryMap.put("expiration", 120L);
         symmetricFactoryMap.put("primary_ltpa_shared_key", sharedKey);
         symmetricFactoryMap.put("expirationDifferenceAllowed", 0L);
         symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SIGNING_MODE, "symmetric");
-        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "AES-GCM-256");
+        symmetricFactoryMap.put(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG, "AES-GMAC-256");
         symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_CIPHER, "AES/CBC/PKCS5Padding");
         symmetricFactoryMap.put(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH, 32); // AES-CBC-256
 
@@ -247,7 +337,7 @@ public class LTPAToken2FactoryTest {
 
         byte[] tokenBytes = token.getBytes();
         assertTrue("Token must have header magic", LTPATokenHeader.hasMagic(tokenBytes));
-        assertEquals("SigAlg must be AES-GCM-256 (0x06)", LTPATokenHeader.SIG_ALG_AES_GCM_256, tokenBytes[5]);
+        assertEquals("SigAlg must be AES-GMAC-256 (0x06)", LTPATokenHeader.SIG_ALG_AES_GMAC_256, tokenBytes[5]);
         assertEquals("EncAlg must be AES-CBC-256 (0x02)", LTPATokenHeader.ENC_ALG_AES_CBC_256, tokenBytes[6]);
 
         Token validatedToken = symmetricFactory.validateTokenBytes(tokenBytes);

@@ -19,6 +19,7 @@ import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
@@ -934,7 +935,7 @@ final class LTPACrypto {
      * Derive a signing key from the master shared key using HKDF (HMAC-SHA256) with domain-specific info.
      *
      * @param masterKey The master LTPA shared key
-     * @param sigAlg    The signature algorithm name (e.g. "AES-GCM-256")
+     * @param sigAlg    The signature algorithm name (e.g. "AES-GMAC-256" or "HMAC-SHA-256")
      * @return 256-bit (32 bytes) derived signing key
      * @throws Exception if key derivation fails
      */
@@ -977,7 +978,7 @@ final class LTPACrypto {
     }
 
     /**
-     * Sign data using AES-GCM-256 (GMAC).
+     * Sign data using AES-GMAC-256 (AES-GCM with empty plaintext; the data is supplied as AAD).
      * Computes a 128-bit (16-byte) authentication tag over {@code data} with a fresh 12-byte IV.
      * Output format: [IV (12 bytes)][Auth Tag (16 bytes)] (28 bytes total).
      *
@@ -986,7 +987,7 @@ final class LTPACrypto {
      * @return 28-byte signature consisting of IV and authentication tag
      * @throws Exception if signing fails
      */
-    protected static final byte[] signGCM(byte[] data, byte[] key) throws Exception {
+    protected static final byte[] signGMAC(byte[] data, byte[] key) throws Exception {
         long startSign = System.currentTimeMillis();
         byte[] iv = new byte[12];
         SecureRandom random = new SecureRandom();
@@ -1006,12 +1007,12 @@ final class LTPACrypto {
         System.arraycopy(tag, 0, signature, 12, tag.length);
 
         long signMs = System.currentTimeMillis() - startSign;
-        System.out.println("[LTPACrypto] signGCM (AES-GCM-256 GMAC): end; dataLen=" + data.length + ", sigLen=" + signature.length + ", took=" + signMs + " ms");
+        System.out.println("[LTPACrypto] signGMAC (AES-GMAC-256): end; dataLen=" + data.length + ", sigLen=" + signature.length + ", took=" + signMs + " ms");
         return signature;
     }
 
     /**
-     * Verify a signature using AES-GCM-256 (GMAC).
+     * Verify a signature using AES-GMAC-256.
      * Expects [IV (12 bytes)][Auth Tag (16 bytes)] (28 bytes total).
      *
      * @param data      The data that was signed
@@ -1019,7 +1020,7 @@ final class LTPACrypto {
      * @param key       The derived 256-bit signing key
      * @return true if valid, false if signature is invalid or tampered
      */
-    protected static final boolean verifyGCM(byte[] data, byte[] signature, byte[] key) {
+    protected static final boolean verifyGMAC(byte[] data, byte[] signature, byte[] key) {
         if (data == null || signature == null || key == null || signature.length != 28) {
             return false;
         }
@@ -1038,10 +1039,57 @@ final class LTPACrypto {
             cipher.doFinal(tag); // Throws AEADBadTagException if tag mismatch
 
             long verifyMs = System.currentTimeMillis() - startVerify;
-            System.out.println("[LTPACrypto] verifyGCM (AES-GCM-256 GMAC): valid=true, took=" + verifyMs + " ms");
+            System.out.println("[LTPACrypto] verifyGMAC (AES-GMAC-256): valid=true, took=" + verifyMs + " ms");
             return true;
         } catch (Exception e) {
-            System.out.println("[LTPACrypto] verifyGCM (AES-GCM-256 GMAC): valid=false (exception: " + e.getMessage() + ")");
+            System.out.println("[LTPACrypto] verifyGMAC (AES-GMAC-256): valid=false (exception: " + e.getMessage() + ")");
+            return false;
+        }
+    }
+
+    /**
+     * Sign data using HMAC-SHA-256.
+     * Output format: [HMAC tag (32 bytes)]. HMAC is deterministic, so no IV is used.
+     *
+     * @param data The data to sign
+     * @param key  The derived 256-bit signing key
+     * @return 32-byte HMAC-SHA-256 tag
+     * @throws Exception if signing fails
+     */
+    protected static final byte[] signHMAC(byte[] data, byte[] key) throws Exception {
+        long startSign = System.currentTimeMillis();
+        Mac mac = (provider == null) ? Mac.getInstance("HmacSHA256") : Mac.getInstance("HmacSHA256", provider);
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        byte[] signature = mac.doFinal(data);
+
+        long signMs = System.currentTimeMillis() - startSign;
+        System.out.println("[LTPACrypto] signHMAC (HMAC-SHA-256): end; dataLen=" + data.length + ", sigLen=" + signature.length + ", took=" + signMs + " ms");
+        return signature;
+    }
+
+    /**
+     * Verify a signature using HMAC-SHA-256. The tag comparison is constant-time.
+     *
+     * @param data      The data that was signed
+     * @param signature The 32-byte HMAC tag
+     * @param key       The derived 256-bit signing key
+     * @return true if valid, false if signature is invalid or tampered
+     */
+    protected static final boolean verifyHMAC(byte[] data, byte[] signature, byte[] key) {
+        if (data == null || signature == null || key == null || signature.length != 32) {
+            return false;
+        }
+        try {
+            long startVerify = System.currentTimeMillis();
+            Mac mac = (provider == null) ? Mac.getInstance("HmacSHA256") : Mac.getInstance("HmacSHA256", provider);
+            mac.init(new SecretKeySpec(key, "HmacSHA256"));
+            boolean valid = MessageDigest.isEqual(mac.doFinal(data), signature);
+
+            long verifyMs = System.currentTimeMillis() - startVerify;
+            System.out.println("[LTPACrypto] verifyHMAC (HMAC-SHA-256): valid=" + valid + ", took=" + verifyMs + " ms");
+            return valid;
+        } catch (Exception e) {
+            System.out.println("[LTPACrypto] verifyHMAC (HMAC-SHA-256): valid=false (exception: " + e.getMessage() + ")");
             return false;
         }
     }

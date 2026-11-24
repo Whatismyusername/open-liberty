@@ -95,7 +95,7 @@ public interface LTPAConfiguration {
 
     /**
      * The symmetric digital signature algorithm.
-     * Valid values: "AES-GCM-256" (default)
+     * Valid values: "HMAC-SHA-256" (default), "AES-GMAC-256"
      */
     public static final String CFG_KEY_SYMMETRIC_SIGNATURE_ALGORITHM = "symmetricSignatureAlgorithm";
 
@@ -213,7 +213,7 @@ public interface LTPAConfiguration {
     /**
      * Get the symmetric signature algorithm for LTPA tokens.
      *
-     * @return The symmetric signature algorithm: "AES-GCM-256"
+     * @return The symmetric signature algorithm: "HMAC-SHA-256" or "AES-GMAC-256"
      */
     String getSymmetricSignatureAlgorithm();
 

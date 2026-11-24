@@ -41,11 +41,13 @@ public final class LTPATokenHeader {
     public static final byte SIG_ALG_ML_DSA = (byte) 0x03;
     public static final byte SIG_ALG_HYBRID_SHA1_RSA_ML_DSA = (byte) 0x04;
     public static final byte SIG_ALG_HYBRID_SHA512_RSA_ML_DSA = (byte) 0x05;
-    public static final byte SIG_ALG_AES_GCM_256 = (byte) 0x06;
+    public static final byte SIG_ALG_AES_GMAC_256 = (byte) 0x06;
+    public static final byte SIG_ALG_HMAC_SHA_256 = (byte) 0x07;
 
     public static final String SIG_ALG_NAME_HYBRID_SHA1_RSA_ML_DSA = "HYBRID-SHA1withRSA-ML-DSA";
     public static final String SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA = "HYBRID-SHA512withRSA-ML-DSA";
-    public static final String SIG_ALG_NAME_AES_GCM_256 = "AES-GCM-256";
+    public static final String SIG_ALG_NAME_AES_GMAC_256 = "AES-GMAC-256";
+    public static final String SIG_ALG_NAME_HMAC_SHA_256 = "HMAC-SHA-256";
 
     public static final String ENC_ALG_NAME_AES_CBC_128 = "AES-CBC-128";
     public static final String ENC_ALG_NAME_AES_CBC_256 = "AES-CBC-256";
@@ -74,7 +76,16 @@ public final class LTPATokenHeader {
     }
 
     /**
-     * Derives the {@code SigAlg} header byte from the ltpa signing configuration
+     * Returns the symmetric signature algorithm name to use: the configured value, or
+     * the default (HMAC-SHA-256) when it is null or empty.
+     */
+    public static String resolveSymmetricSigAlg(String configured) {
+        return (configured == null || configured.isEmpty()) ? SIG_ALG_NAME_HMAC_SHA_256 : configured;
+    }
+
+    /**
+     * Derives the {@code SigAlg} header byte from the ltpa signing configuration.
+     * For symmetric mode this uses the default symmetric signature algorithm (HMAC-SHA-256).
      *
      * @param signingMode      "pqc", "classical"
      * @param classicalSigAlg  JCA algorithm string (e.g. "SHA1withRSA", "SHA512withRSA") — must not be null
@@ -82,6 +93,20 @@ public final class LTPATokenHeader {
      * @throws IllegalArgumentException if the combination is unrecognised
      */
     public static byte encodeSigAlg(String signingMode, String classicalSigAlg) {
+        return encodeSigAlg(signingMode, classicalSigAlg, null);
+    }
+
+    /**
+     * Derives the {@code SigAlg} header byte from the ltpa signing configuration
+     *
+     * @param signingMode      "pqc", "classical"
+     * @param classicalSigAlg  JCA algorithm string (e.g. "SHA1withRSA", "SHA512withRSA") — must not be null
+     * @param symmetricSigAlg  "AES-GMAC-256" or "HMAC-SHA-256"; only used when signingMode is "symmetric".
+     *                         null or empty selects the default (HMAC-SHA-256)
+     * @return the SigAlg header byte
+     * @throws IllegalArgumentException if the combination is unrecognised
+     */
+    public static byte encodeSigAlg(String signingMode, String classicalSigAlg, String symmetricSigAlg) {
         if ("none".equals(signingMode)) {
             return SIG_ALG_NONE;
         }
@@ -89,7 +114,14 @@ public final class LTPATokenHeader {
             return SIG_ALG_ML_DSA; // maybe look at specifying mldsa variant?
         }
         if ("symmetric".equals(signingMode)) {
-            return SIG_ALG_AES_GCM_256;
+            String resolved = resolveSymmetricSigAlg(symmetricSigAlg);
+            if (SIG_ALG_NAME_HMAC_SHA_256.equals(resolved)) {
+                return SIG_ALG_HMAC_SHA_256;
+            }
+            if (SIG_ALG_NAME_AES_GMAC_256.equals(resolved)) {
+                return SIG_ALG_AES_GMAC_256;
+            }
+            throw new IllegalArgumentException("Unrecognised symmetricSigAlg for header encoding: " + symmetricSigAlg);
         }
         if ("hybrid".equals(signingMode)) {
             if (CryptoUtils.SIGNATURE_ALGORITHM_SHA512WITHRSA.equals(classicalSigAlg)) {
@@ -155,7 +187,8 @@ public final class LTPATokenHeader {
             case SIG_ALG_ML_DSA: return "ML-DSA";
             case SIG_ALG_HYBRID_SHA1_RSA_ML_DSA: return SIG_ALG_NAME_HYBRID_SHA1_RSA_ML_DSA;
             case SIG_ALG_HYBRID_SHA512_RSA_ML_DSA: return SIG_ALG_NAME_HYBRID_SHA512_RSA_ML_DSA;
-            case SIG_ALG_AES_GCM_256: return SIG_ALG_NAME_AES_GCM_256;
+            case SIG_ALG_AES_GMAC_256: return SIG_ALG_NAME_AES_GMAC_256;
+            case SIG_ALG_HMAC_SHA_256: return SIG_ALG_NAME_HMAC_SHA_256;
             default:
                 throw new InvalidTokenException("Unknown SigAlg byte in token header: 0x"
                         + Integer.toHexString(sigAlgByte & 0xFF));
@@ -180,14 +213,14 @@ public final class LTPATokenHeader {
      * Checks if the given SigAlg header byte represents a symmetric (shared-key) signature algorithm.
      */
     public static boolean isSymmetricSigAlg(byte sigAlgByte) {
-        return sigAlgByte == SIG_ALG_AES_GCM_256;
+        return sigAlgByte == SIG_ALG_AES_GMAC_256 || sigAlgByte == SIG_ALG_HMAC_SHA_256;
     }
 
     /**
      * Checks if the given decoded signature algorithm string represents a symmetric (shared-key) signature algorithm.
      */
     public static boolean isSymmetricSigAlg(String sigAlg) {
-        return SIG_ALG_NAME_AES_GCM_256.equals(sigAlg);
+        return SIG_ALG_NAME_AES_GMAC_256.equals(sigAlg) || SIG_ALG_NAME_HMAC_SHA_256.equals(sigAlg);
     }
 
     /**

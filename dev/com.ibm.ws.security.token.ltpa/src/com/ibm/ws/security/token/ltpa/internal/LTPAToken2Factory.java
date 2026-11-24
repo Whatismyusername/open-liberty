@@ -53,6 +53,7 @@ public class LTPAToken2Factory implements TokenFactory {
     private String resolvedCipher;
     private int resolvedKeyLength;
     private String hybridVerificationPolicy;
+    private String symmetricSigAlg;
 
     @Sensitive
     private byte[] primaryDerivedEncKey;
@@ -80,6 +81,7 @@ public class LTPAToken2Factory implements TokenFactory {
         classicalSigAlg = (String) tokenFactoryMap.get(LTPAConstants.CONFIGURED_CLASSICAL_SIG_ALG);
         resolvedCipher = (String) tokenFactoryMap.get(LTPAConstants.CONFIGURED_RESOLVED_CIPHER);
         resolvedKeyLength = (int) tokenFactoryMap.get(LTPAConstants.CONFIGURED_RESOLVED_KEY_LENGTH);
+        symmetricSigAlg = LTPATokenHeader.resolveSymmetricSigAlg((String) tokenFactoryMap.get(LTPAConstants.CONFIGURED_SYMMETRIC_SIG_ALG));
         hybridVerificationPolicy = (String) tokenFactoryMap.get(LTPAConstants.CONFIGURED_HYBRID_VERIFY_POLICY);
         if (hybridVerificationPolicy == null) {
             hybridVerificationPolicy = "both";
@@ -110,7 +112,7 @@ public class LTPAToken2Factory implements TokenFactory {
                 }
             }
             try {
-                primaryDerivedSigKey = LTPAKeyUtil.deriveSigningKey(primarySharedKey, LTPATokenHeader.SIG_ALG_NAME_AES_GCM_256);
+                primaryDerivedSigKey = LTPAKeyUtil.deriveSigningKey(primarySharedKey, symmetricSigAlg);
             } catch (Exception e) {
                 if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                     Tr.debug(tc, "Failed to pre-derive primary signing key: " + e.getMessage());
@@ -208,7 +210,7 @@ public class LTPAToken2Factory implements TokenFactory {
         return new LTPAToken2(userUniqueId, expirationInMinutes,
                               primarySharedKey, primaryPrivateKey, primaryPublicKey,
                               null, null, signingMode, classicalSigAlg, resolvedCipher, resolvedKeyLength,
-                              primaryDerivedEncKey, primaryDerivedEncCipher, primaryDerivedSigKey);
+                              primaryDerivedEncKey, primaryDerivedEncCipher, primaryDerivedSigKey, symmetricSigAlg);
     }
 
     private String getUniqueId(Map tokenData) throws TokenCreationFailedException {
@@ -251,10 +253,10 @@ public class LTPAToken2Factory implements TokenFactory {
                     validatedToken = new LTPAToken2(tokenBytes, primarySharedKey, primaryPrivateKey, primaryPublicKey,
                                                    primaryMLDSAPrivateKey, primaryMLDSAPublicKey, signingMode,
                                                    hybridVerificationPolicy, expDiffAllowed,
-                                                   primaryDerivedEncKey, primaryDerivedEncCipher, primaryDerivedSigKey, removeAttributes);
+                                                   primaryDerivedEncKey, primaryDerivedEncCipher, primaryDerivedSigKey, symmetricSigAlg, removeAttributes);
                 } else {
                     validatedToken = new LTPAToken2(tokenBytes, primarySharedKey, primaryPrivateKey, primaryPublicKey,
-                                                   expDiffAllowed, primaryDerivedEncKey, primaryDerivedEncCipher, primaryDerivedSigKey, removeAttributes);
+                                                   expDiffAllowed, primaryDerivedEncKey, primaryDerivedEncCipher, primaryDerivedSigKey, symmetricSigAlg, removeAttributes);
                 }
                 if (validatedToken != null) {
                     if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {

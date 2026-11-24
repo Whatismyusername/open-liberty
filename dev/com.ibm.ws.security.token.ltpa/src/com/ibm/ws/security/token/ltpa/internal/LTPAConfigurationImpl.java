@@ -394,7 +394,11 @@ public class LTPAConfigurationImpl implements LTPAConfiguration, FileBasedAction
 
             case "symmetric":
                 if (symmetricSignatureAlgorithm == null || symmetricSignatureAlgorithm.isEmpty()) {
-                    symmetricSignatureAlgorithm = "AES-GCM-256";
+                    symmetricSignatureAlgorithm = LTPATokenHeader.SIG_ALG_NAME_HMAC_SHA_256;
+                } else if (!LTPATokenHeader.isSymmetricSigAlg(symmetricSignatureAlgorithm)) {
+                    Tr.warning(tc, "LTPA_CONFIG_INVALID", "symmetricSignatureAlgorithm=" + symmetricSignatureAlgorithm + " is not supported; defaulting to "
+                                                          + LTPATokenHeader.SIG_ALG_NAME_HMAC_SHA_256);
+                    symmetricSignatureAlgorithm = LTPATokenHeader.SIG_ALG_NAME_HMAC_SHA_256;
                 }
                 if (encryptionAlgorithm == null || encryptionAlgorithm.isEmpty()) {
                     encryptionAlgorithm = "AES-GCM-256";

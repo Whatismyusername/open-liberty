@@ -74,7 +74,7 @@ public class LTPAConstants {
     /** Effective classical signature algorithm (e.g. SHA1withRSA, SHA512withRSA). */
     protected static final String CONFIGURED_CLASSICAL_SIG_ALG = "configured_classical_sig_alg";
 
-    /** Effective symmetric signature algorithm (e.g. AES-GCM-256). */
+    /** Effective symmetric signature algorithm (HMAC-SHA-256 or AES-GMAC-256). */
     protected static final String CONFIGURED_SYMMETRIC_SIG_ALG = "configured_symmetric_sig_alg";
 
     /** JCA cipher string resolved from encryptionAlgorithm (e.g. AES/CBC/PKCS5Padding, AES/GCM/NoPadding). */

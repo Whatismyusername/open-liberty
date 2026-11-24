@@ -114,7 +114,7 @@ public final class LTPAKeyUtil {
          * Derives a signing key from the master shared key using HKDF (HMAC-SHA256).
          *
          * @param masterKey The master LTPA shared key
-         * @param sigAlg    The signature algorithm name (e.g. "AES-GCM-256")
+         * @param sigAlg    The signature algorithm name (e.g. "AES-GMAC-256" or "HMAC-SHA-256")
          * @return 256-bit (32 bytes) derived signing key
          * @throws Exception if key derivation fails
          */
@@ -136,7 +136,7 @@ public final class LTPAKeyUtil {
         }
 
         /**
-         * Sign data using AES-GCM-256 (GMAC).
+         * Sign data using AES-GMAC-256 (AES-GCM with empty plaintext; the data is supplied as AAD).
          * Computes a 128-bit (16-byte) authentication tag over {@code data} with a fresh 12-byte IV.
          * Output format: [IV (12 bytes)][Auth Tag (16 bytes)] (28 bytes total).
          *
@@ -145,12 +145,12 @@ public final class LTPAKeyUtil {
          * @return 28-byte signature
          * @throws Exception if signing fails
          */
-        public static byte[] signGCM(byte[] data, byte[] key) throws Exception {
-                return LTPACrypto.signGCM(data, key);
+        public static byte[] signGMAC(byte[] data, byte[] key) throws Exception {
+                return LTPACrypto.signGMAC(data, key);
         }
 
         /**
-         * Verify a signature using AES-GCM-256 (GMAC).
+         * Verify a signature using AES-GMAC-256.
          * Expects [IV (12 bytes)][Auth Tag (16 bytes)] (28 bytes total).
          *
          * @param data      The data that was signed
@@ -158,8 +158,33 @@ public final class LTPAKeyUtil {
          * @param key       The derived 256-bit signing key
          * @return true if valid, false if signature is invalid or tampered
          */
-        public static boolean verifyGCM(byte[] data, byte[] signature, byte[] key) {
-                return LTPACrypto.verifyGCM(data, signature, key);
+        public static boolean verifyGMAC(byte[] data, byte[] signature, byte[] key) {
+                return LTPACrypto.verifyGMAC(data, signature, key);
+        }
+
+        /**
+         * Sign data using HMAC-SHA-256.
+         * Output format: [HMAC tag (32 bytes)].
+         *
+         * @param data The data to sign
+         * @param key  The derived 256-bit signing key
+         * @return 32-byte signature
+         * @throws Exception if signing fails
+         */
+        public static byte[] signHMAC(byte[] data, byte[] key) throws Exception {
+                return LTPACrypto.signHMAC(data, key);
+        }
+
+        /**
+         * Verify a signature using HMAC-SHA-256 (constant-time comparison).
+         *
+         * @param data      The data that was signed
+         * @param signature The 32-byte HMAC tag
+         * @param key       The derived 256-bit signing key
+         * @return true if valid, false if signature is invalid or tampered
+         */
+        public static boolean verifyHMAC(byte[] data, byte[] signature, byte[] key) {
+                return LTPACrypto.verifyHMAC(data, signature, key);
         }
 
  public static byte[] signISO9796(byte[][] key, byte[] data, int off, int len) throws Exception {
